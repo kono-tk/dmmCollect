@@ -1,0 +1,22 @@
+# C# / .NET
+[Bb]in/
+[Oo]bj/
+[Pp]ublish/
+*.user
+*.userosscache
+*.sln.docstates
+
+# Debug Output & Logs
+*.log
+*.txt
+detail_error_*
+error_page.html
+error_screenshot.png
+*_screenshot.png
+*_test.html
+*_test_screenshot.png
+sync_debug_log.txt
+
+# OS metadata
+.DS_Store
+Thumbs.db
