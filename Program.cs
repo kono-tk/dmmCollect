@@ -143,8 +143,8 @@ namespace dmmCollect
                         ["top"] = config.Config.login.urls.top ?? "https://www.dmm.co.jp/top/",
                         ["login_page"] = config.Config.login.urls.login_page ?? "https://accounts.dmm.co.jp/service/login/password/=/path=https%3A%2F%2Fwww.dmm.co.jp%2Ftop%2F",
                         ["my_library_search"] = config.Config.login.urls.my_library_search ?? "https://www.dmm.co.jp/digital/-/mylibrary/search/",
-                        ["detail_page_base"] = config.Config.login.urls.detail_page_base ?? "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid={{cid}}/",
-                        ["library_url"] = config.Config.books.library_url ?? "https://book.dmm.co.jp/shelf/?tab=library&page={{page_num}}"
+                        ["detail_page_base"] = config.Config.login.urls.detail_page_base ?? "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid={cid}/",
+                        ["library_url"] = config.Config.books.library_url ?? "https://book.dmm.co.jp/shelf/?tab=library&page={page_num}"
                     };
 
                     if (mode == "books")

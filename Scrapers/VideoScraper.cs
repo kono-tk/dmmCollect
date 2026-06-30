@@ -917,6 +917,28 @@ namespace dmmCollect.Scrapers
                 await using var page = await Context!.NewPageAsync();
                 await page.GotoAsync(detailUrl, new() { Timeout = 20000, WaitUntil = WaitUntilState.DOMContentLoaded });
 
+                // 年齢確認ページへリダイレクトされた場合は自動で通過する
+                string currentUrl = page.Url;
+                if (currentUrl.Contains("/age_check/") || currentUrl.Contains("age_check"))
+                {
+                    Console.WriteLine($"  [INFO] 年齢確認ページを検出しました。自動で通過します...");
+                    try
+                    {
+                        // "I Agree" / 「同意する」ボタンのhrefを取得してそのURLへ遷移
+                        var agreeLink = page.Locator("a[href*='declared=yes']").First;
+                        string? agreeHref = await agreeLink.GetAttributeAsync("href");
+                        if (!string.IsNullOrEmpty(agreeHref))
+                        {
+                            await page.GotoAsync(agreeHref, new() { Timeout = 20000, WaitUntil = WaitUntilState.DOMContentLoaded });
+                            Console.WriteLine($"  [INFO] 年齢確認通過後のURL: {page.Url}");
+                        }
+                    }
+                    catch (Exception ageEx)
+                    {
+                        Console.WriteLine($"  [WARNING] 年齢確認の自動通過に失敗しました: {ageEx.Message}");
+                    }
+                }
+
                 await CloseAdPopupIfPresentAsync(page);
 
                 try
