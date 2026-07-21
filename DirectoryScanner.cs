@@ -33,7 +33,7 @@ namespace dmmCollect
                     foreach (var dir in allDirs)
                     {
                         var dirName = Path.GetFileName(dir);
-                        if (dirName.Equals("FLAT", StringComparison.OrdinalIgnoreCase) || dirName.Equals("_lost_found", StringComparison.OrdinalIgnoreCase)) continue;
+                        if (dirName.Equals("FLAT", StringComparison.OrdinalIgnoreCase) || dirName.Equals("_lost_found", StringComparison.OrdinalIgnoreCase) || dirName.Equals("lost+found", StringComparison.OrdinalIgnoreCase)) continue;
 
                         var htmlFile = Path.Combine(dir, $"{dirName}.html");
                         if (File.Exists(htmlFile))
@@ -58,6 +58,56 @@ namespace dmmCollect
             var targetDirs = candidateDirs.Where(d => keywordsSet.Contains(Path.GetFileName(d))).ToList();
             Console.WriteLine($"キーワードに一致した {targetDirs.Count} 件の候補ディレクトリが見つかりました。");
             return targetDirs;
+        }
+
+        public List<string> GetTargetFolders(List<string>? keywords = null)
+        {
+            var targetFolders = new List<string>();
+            try
+            {
+                if (!Directory.Exists(BaseDirectory)) return targetFolders;
+
+                if (keywords != null && keywords.Count > 0)
+                {
+                    var keywordsSet = new HashSet<string>(keywords, StringComparer.OrdinalIgnoreCase);
+                    var allDirs = Directory.GetDirectories(BaseDirectory, "*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true });
+                    foreach (var dir in allDirs)
+                    {
+                        var dirName = Path.GetFileName(dir);
+                        if (dirName.Equals("FLAT", StringComparison.OrdinalIgnoreCase) || dirName.Equals("_lost_found", StringComparison.OrdinalIgnoreCase) || dirName.Equals("lost+found", StringComparison.OrdinalIgnoreCase)) continue;
+
+                        if (keywordsSet.Contains(dirName))
+                        {
+                            targetFolders.Add(dir);
+                        }
+                    }
+                }
+                else
+                {
+                    // 配下にディレクトリを持たない末端フォルダ（リーフフォルダ）をスキャン
+                    var allDirs = Directory.GetDirectories(BaseDirectory, "*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true });
+                    foreach (var dir in allDirs)
+                    {
+                        var dirName = Path.GetFileName(dir);
+                        if (dirName.Equals("FLAT", StringComparison.OrdinalIgnoreCase) || dirName.Equals("_lost_found", StringComparison.OrdinalIgnoreCase) || dirName.Equals("lost+found", StringComparison.OrdinalIgnoreCase)) continue;
+
+                        try
+                        {
+                            var subDirs = Directory.GetDirectories(dir);
+                            if (subDirs.Length == 0)
+                            {
+                                targetFolders.Add(dir);
+                            }
+                        }
+                        catch (UnauthorizedAccessException) { }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[WARNING] GetTargetFoldersスキャン中にエラー: {ex.Message}");
+            }
+            return targetFolders;
         }
 
         public Dictionary<string, string> FindTargetFolders()

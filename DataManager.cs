@@ -19,6 +19,7 @@ namespace dmmCollect
         private readonly Dictionary<string, List<JsonObject>> _exactMatchCache = new();
         private readonly Dictionary<string, List<JsonObject>> _colonRemovedMatchCache = new();
         private readonly Dictionary<string, List<JsonObject>> _flexibleMatchCache = new();
+        private readonly Dictionary<string, HashSet<string>> _aliasGroups = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<int, string> _sanCache = new();
         private readonly Dictionary<int, string?> _sanFirst3Cache = new();
 
@@ -65,6 +66,50 @@ namespace dmmCollect
 
                 Data = Data.Where(item => item != null).ToList();
 
+                _aliasGroups.Clear();
+                if (rootNode is JsonObject rootObj && rootObj.ContainsKey("performer_aliases"))
+                {
+                    var aliasesNode = rootObj["performer_aliases"];
+                    if (aliasesNode is JsonObject aliasesObj)
+                    {
+                        foreach (var property in aliasesObj)
+                        {
+                            string primaryName = property.Key;
+                            var aliasList = property.Value?.AsArray()?.Select(n => n?.ToString() ?? "").Where(s => !string.IsNullOrEmpty(s)).ToList() ?? new List<string>();
+                            
+                            var group = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { primaryName };
+                            foreach (var alias in aliasList)
+                            {
+                                group.Add(alias);
+                            }
+                            
+                            foreach (var name in group)
+                            {
+                                _aliasGroups[name] = group;
+                            }
+                        }
+                    }
+                    else if (aliasesNode is JsonArray aliasesArr)
+                    {
+                        foreach (var itemNode in aliasesArr)
+                        {
+                            if (itemNode is JsonArray groupArr)
+                            {
+                                var group = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                foreach (var n in groupArr)
+                                {
+                                    string name = n?.ToString() ?? "";
+                                    if (!string.IsNullOrEmpty(name)) group.Add(name);
+                                }
+                                foreach (var name in group)
+                                {
+                                    _aliasGroups[name] = group;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 _lastMTime = File.GetLastWriteTime(DataPath);
                 BuildIndexes();
                 Console.WriteLine($"DataManager: Loaded {Data.Count} items from '{DataPath}'");
@@ -74,6 +119,15 @@ namespace dmmCollect
                 Console.WriteLine($"Error loading data.json: {ex.Message}");
                 throw;
             }
+        }
+
+        public HashSet<string> GetAliases(string name)
+        {
+            if (_aliasGroups.TryGetValue(name, out var group))
+            {
+                return group;
+            }
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase) { name };
         }
 
         public bool ReloadIfUpdated()

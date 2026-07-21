@@ -63,5 +63,23 @@ namespace dmmCollect
                 Console.WriteLine($"    リンク作成/上書きに失敗しました ({Path.GetFileName(linkPath)}): {ex.Message}");
             }
         }
+
+        /// <summary>
+        /// 既存の .lnk ファイルのリンク先パスを取得します。
+        /// 取得に失敗した場合は null を返します。
+        /// </summary>
+        public string? GetTargetPath(string linkPath)
+        {
+            try
+            {
+                dynamic shortcut = _shell.CreateShortcut(linkPath);
+                string targetPath = shortcut.TargetPath;
+                return string.IsNullOrEmpty(targetPath) ? null : targetPath;
+            }
+            catch
+            {
+                return null;
+            }
+        }
     }
 }

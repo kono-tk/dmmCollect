@@ -118,16 +118,45 @@ namespace dmmCollect.Scrapers
             int totalCount = 0;
             try
             {
-                var totalTextEl = Page.Locator("h1 span.text-sm");
-                if (await totalTextEl.CountAsync() > 0)
+                // 総件数テキストを複数のセレクターで順に試す
+                // 例: "3,380本の動画" や "3,380件" などカンマ区切りに対応
+                string[] totalCountSelectors = new[]
                 {
-                    string totalText = await totalTextEl.InnerTextAsync();
-                    var match = Regex.Match(totalText, @"\d+");
-                    if (match.Success)
+                    "h1 span.text-sm",           // 旧レイアウト
+                    "h1 span",                   // h1直下のspan全般
+                    "[class*='result'] span",    // result系クラス
+                    "p:has-text('本の動画')",     // videoモード件数テキスト
+                    "p:has-text('件')",          // 件数テキスト全般
+                };
+
+                foreach (var sel in totalCountSelectors)
+                {
+                    try
                     {
-                        totalCount = int.Parse(match.Value);
-                        Console.WriteLine($"総購入件数を検出しました: {totalCount}件");
+                        var el = Page.Locator(sel).First;
+                        if (await el.CountAsync() > 0 && await el.IsVisibleAsync())
+                        {
+                            string totalText = await el.InnerTextAsync();
+                            // カンマ区切りの数字（例: 3,380）も含めてマッチ
+                            var match = Regex.Match(totalText, @"[\d,]+");
+                            if (match.Success)
+                            {
+                                string numStr = match.Value.Replace(",", "");
+                                if (int.TryParse(numStr, out int parsed) && parsed > 0)
+                                {
+                                    totalCount = parsed;
+                                    Console.WriteLine($"総購入件数を検出しました: {totalCount}件 (セレクター: '{sel}', テキスト: '{totalText.Trim()}')");
+                                    break;
+                                }
+                            }
+                        }
                     }
+                    catch { }
+                }
+
+                if (totalCount == 0)
+                {
+                    Console.WriteLine("総件数を検出できませんでした。「もっと見る」ボタンがなくなるまでクリックし続けます。");
                 }
             }
             catch (Exception ex)

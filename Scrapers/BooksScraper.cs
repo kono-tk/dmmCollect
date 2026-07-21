@@ -477,15 +477,16 @@ namespace dmmCollect.Scrapers
         private async Task FetchMissingBookDetailsAsync(DataManager dataManager)
         {
             Console.WriteLine("[フェーズ3/3] 未取得の書籍の詳細情報を収集します...");
+            // pages（ページ数）は詳細ページに存在しない書籍（アンソロジー誌等）があるため、判定から除外する
             var itemsToFetch = dataManager.Data.Where(item =>
                 item.ContainsKey("subtitle") && item["subtitle"] != null &&
                 item.ContainsKey("detail_url") && item["detail_url"] != null &&
                 (!item.ContainsKey("purchase_date") || item["purchase_date"] == null ||
                  !item.ContainsKey("description") || item["description"] == null ||
                  !item.ContainsKey("genres") || item["genres"] == null ||
-                 !item.ContainsKey("pages") || item["pages"] == null ||
                  !item.ContainsKey("maker") || item["maker"] == null)
             ).ToList();
+
 
             Console.WriteLine($"詳細情報を取得する必要がある書籍は {itemsToFetch.Count} 件です。");
 

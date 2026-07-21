@@ -170,11 +170,86 @@ namespace dmmCollect
                         await scraper.LoginAsync(dmmId, dmmPw);
                         await scraper.NavigateAndWaitForVideoLibraryAsync();
                         
-                        string? targetKeyword = keywords.Count > 0 && keywords[0] != "-" ? keywords[0] : null;
-                        await scraper.SearchAndExpandAsync(targetKeyword);
+                        // FLATフォルダに全コンテンツ情報のHTMLを保存する処理（フェーズ1）
+                        string flatDir = Path.Combine(baseDir, AppConstants.FLAT_DIR_NAME);
+                        Directory.CreateDirectory(flatDir);
+                        string flatHtmlPath = Path.Combine(flatDir, $"{AppConstants.FLAT_DIR_NAME}.html");
                         
-                        await scraper.UpdateCidsAndDownloadImagesAsync(imageDir, dataManager);
-                        await scraper.CollectPurchaseDatesAsync(dataManager);
+                        Console.WriteLine($"=== フェーズ1: FLATフォルダに全コンテンツ情報を保存 ===");
+                        if (await scraper.SearchAndExpandAsync(null))
+                        {
+                            Console.WriteLine($"[SAVE HTML] 全コンテンツ情報をFLATフォルダに保存: {flatHtmlPath}");
+                            try
+                            {
+                                string pageContent = await scraper.Page!.ContentAsync();
+                                await File.WriteAllTextAsync(flatHtmlPath, pageContent);
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[ERROR] FLATフォルダへのHTML保存に失敗: {ex.Message}");
+                            }
+                            await scraper.UpdateCidsAndDownloadImagesAsync(imageDir, dataManager);
+                            await scraper.CollectPurchaseDatesAsync(dataManager);
+                        }
+                        else
+                        {
+                            Console.WriteLine("[ERROR] 全コンテンツの取得に失敗しました。");
+                            return 1;
+                        }
+
+                        // キーワード絞り込みとHTML保存処理（フェーズ2）
+                        if (keywords.Count > 0 && keywords[0] == "-")
+                        {
+                            Console.WriteLine("=== フェーズ2: スキップ（keywordsに - が指定されました） ===");
+                        }
+                        else
+                        {
+                            List<string> targetFolders;
+                            var scanner = new DirectoryScanner(baseDir, config.TargetRoots);
+                            if (keywords.Count > 0)
+                            {
+                                Console.WriteLine("=== フェーズ2: 指定キーワードでの絞り込み処理 ===");
+                                targetFolders = scanner.GetTargetFolders(keywords);
+                            }
+                            else
+                            {
+                                Console.WriteLine("=== フェーズ2: 自動フォルダ検出での処理 ===");
+                                targetFolders = scanner.GetTargetFolders(null);
+                            }
+
+                            if (targetFolders.Count == 0)
+                            {
+                                Console.WriteLine("[WARNING] 処理対象のキーワードフォルダが見つかりませんでした。");
+                            }
+                            else
+                            {
+                                Console.WriteLine($"キーワード絞り込み処理を開始します（全{targetFolders.Count}件）。HTML保存のみを実行します。");
+                                foreach (var folderPath in targetFolders)
+                                {
+                                    string keyword = Path.GetFileName(folderPath);
+                                    Console.WriteLine($"\n--- キーワード: {keyword} の処理を開始 ---");
+                                    if (await scraper.SearchAndExpandAsync(keyword))
+                                    {
+                                        string htmlSavePath = Path.Combine(folderPath, $"{keyword}.html");
+                                        Console.WriteLine($"  [SAVE HTML] 検索結果を保存します: {htmlSavePath}");
+                                        try
+                                        {
+                                            string pageContent = await scraper.Page!.ContentAsync();
+                                            await File.WriteAllTextAsync(htmlSavePath, pageContent);
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            Console.WriteLine($"  [ERROR] HTMLの保存に失敗しました: {ex.Message}");
+                                        }
+                                    }
+                                }
+                                Console.WriteLine("キーワード絞り込み処理が完了しました。");
+                            }
+                        }
+
+                        // 元の画面（全表示状態）に戻してから詳細取得等に進むために再度Navigateします
+                        await scraper.NavigateAndWaitForVideoLibraryAsync();
+                        await scraper.SearchAndExpandAsync(null);
 
                         // 不足している詳細情報の自動取得
                         await scraper.UpdateAllDetailsAsync(dataManager, imageDir);
@@ -199,32 +274,42 @@ namespace dmmCollect
             }
 
             // === 同期処理部 (dmmSearch) ===
-            Console.WriteLine("=== ショートカット同期処理を開始します ===");
-            try
+            // video モードのみ .dcv リンク同期処理を行う
+            if (mode == "video")
             {
-                var scanner = new DirectoryScanner(baseDir, config.TargetRoots);
-                var shortcutMgr = new ShortcutManager();
+                Console.WriteLine("=== ショートカット同期処理を開始します ===");
+                try
+                {
+                    var scanner = new DirectoryScanner(baseDir, config.TargetRoots);
+                    var shortcutMgr = new ShortcutManager();
 
-                if (lostChild)
-                {
-                    RunLostChildMode(scanner, shortcutMgr, dataManager);
-                }
-                else if (keywords.Count == 0 || (keywords.Count > 0 && keywords[0] == "-"))
-                {
-                    RunFlatMode(scanner, shortcutMgr, dataManager);
-                }
-                else
-                {
-                    RunStandardSearchMode(scanner, shortcutMgr, dataManager, keywords, renewLnk, config.MaxAltLength);
-                }
+                    if (lostChild)
+                    {
+                        RunLostChildMode(scanner, shortcutMgr, dataManager);
+                    }
+                    else if (keywords.Count == 0 || (keywords.Count > 0 && keywords[0] == "-"))
+                    {
+                        RunFlatMode(scanner, shortcutMgr, dataManager);
+                    }
+                    else
+                    {
+                        RunStandardSearchMode(scanner, shortcutMgr, dataManager, keywords, renewLnk, config.MaxAltLength);
+                    }
 
+                    Console.WriteLine("=== 全ての処理が正常に完了しました ===");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[FATAL] ショートカット同期処理中にエラーが発生しました: {ex.Message}");
+                    return 1;
+                }
+            }
+            else
+            {
+                Console.WriteLine($"=== {mode} モードではショートカット同期処理をスキップします ===");
                 Console.WriteLine("=== 全ての処理が正常に完了しました ===");
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[FATAL] ショートカット同期処理中にエラーが発生しました: {ex.Message}");
-                return 1;
-            }
+
 
             return 0;
         }
@@ -339,11 +424,24 @@ namespace dmmCollect
 
             if (File.Exists(linkPathStr))
             {
-                DateTime currentMTime = File.GetLastWriteTime(linkPathStr);
-                if (currentMTime != targetDt)
+                // リンク先が存在するか確認し、リンク切れなら削除して再作成する
+                string? existingTarget = shortcutMgr.GetTargetPath(linkPathStr);
+                if (existingTarget != null && !Directory.Exists(existingTarget))
                 {
-                    Console.WriteLine($"    [UPDATE] タイムスタンプを更新: {Path.GetFileName(linkPathStr)}");
+                    Console.WriteLine($"    [RELINK] リンク切れを検出: '{Path.GetFileName(linkPathStr)}' (旧: {existingTarget})");
+                    Console.WriteLine($"             -> 再作成: '{Path.GetFileName(targetFolder)}'");
+                    File.Delete(linkPathStr);
+                    shortcutMgr.CreateShortcut(linkPathStr, targetFolder);
                     shortcutMgr.SetFileTimestamp(linkPathStr, targetDt);
+                }
+                else
+                {
+                    DateTime currentMTime = File.GetLastWriteTime(linkPathStr);
+                    if (currentMTime != targetDt)
+                    {
+                        Console.WriteLine($"    [UPDATE] タイムスタンプを更新: {Path.GetFileName(linkPathStr)}");
+                        shortcutMgr.SetFileTimestamp(linkPathStr, targetDt);
+                    }
                 }
             }
             else
@@ -368,7 +466,8 @@ namespace dmmCollect
                 var parser = new HtmlParser();
                 var document = parser.ParseDocument(htmlContent);
 
-                var imgTags = document.QuerySelectorAll("span.mySearchList_item_pict img[alt][src]");
+                // 新レイアウトの 'ul.grid li img' と 従来レイアウトの 'span.mySearchList_item_pict img' 両方に対応
+                var imgTags = document.QuerySelectorAll("ul.grid li img[alt], span.mySearchList_item_pict img[alt][src]");
                 var altTexts = new List<string>();
 
                 foreach (var img in imgTags)
