@@ -27,7 +27,12 @@ namespace dmmCollect
         public const string MY_SEARCH_LIST_ITEM_SELECTOR = "ul.grid li";
         public const string LOADING_INDICATOR_SELECTOR = "#loading-dmm";
         public const string SEARCH_DATA_LOADING_SELECTOR = "div.mySearchLoading:has-text(\"検索用データを読み込み中です\")";
-        public const string KEYWORD_INPUT_SELECTOR = "input[placeholder='キーワードで絞り込む']";
+        // ライブラリ内キーワード絞り込み入力欄（2026-07 の新レイアウト。旧: placeholder='キーワードで絞り込む'）
+        public const string KEYWORD_INPUT_SELECTOR = "input[data-e2eid=\"keyword-input\"]";
+        // ページネーション（新レイアウトで「もっと見る」から置き換え。URL方式 ?page=N のリンク群）
+        public const string PAGINATION_SELECTOR = "ul[data-e2eid=\"pagination\"]";
+        // マイライブラリのベースURL。キーワード絞り込みは ?key=<キーワード>、ページ送りは &page=N。
+        public const string MYLIBRARY_BASE_URL = "https://video.dmm.co.jp/mylibrary/";
         public const string LOAD_MORE_BUTTON_SELECTOR = "button:has-text(\"\u3082\u3063\u3068\u898b\u308b\")";
         public const string PURCHASE_DATE_POPUP_SELECTOR = "div.text-white.text-xs.mt-2.text-center";
         public const string POPUP_DETAIL_LINK_SELECTOR = "a[href*=\"/av/content/\"]";

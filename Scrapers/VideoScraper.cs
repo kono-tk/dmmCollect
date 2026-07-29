@@ -83,149 +83,170 @@ namespace dmmCollect.Scrapers
             Console.WriteLine("商品リストの読み込み完了。");
         }
 
+        // キーワードで絞り込み（指定時）、結果の1ページ目を表示した状態にする。
+        // 2026-07 の新レイアウトでは「もっと見る」→ ページネーション（?page=N）に変わったため、
+        // 全ページの展開は各処理側が ForEachPageAsync / CollectSearchResultHtmlAsync で行う。
         public async Task<bool> SearchAndExpandAsync(string? keyword = null)
         {
             if (Page == null) throw new InvalidOperationException("Page is not initialized.");
 
             if (!string.IsNullOrEmpty(keyword))
             {
-                Console.WriteLine($"キーワード '{keyword}' で検索します...");
+                // ライブラリのキーワード絞り込みは URL パラメータ ?key=<キーワード> で行われる
+                // （キーワード欄はフォーム無しの React 制御入力で打鍵が不安定なため、URLへ直接遷移する）。
+                // ページ送りも ?key=...&page=N となるため、後段の全ページ巡回もそのまま機能する。
+                string keyUrl = $"{AppConstants.MYLIBRARY_BASE_URL}?key={Uri.EscapeDataString(keyword)}";
+                Console.WriteLine($"キーワード '{keyword}' で検索します: {keyUrl}");
                 try
                 {
-                    var keywordInput = Page.Locator(AppConstants.KEYWORD_INPUT_SELECTOR);
-                    await keywordInput.FillAsync(keyword);
-                    await keywordInput.PressAsync("Enter");
+                    await Page.GotoAsync(keyUrl, new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+                    await CloseAdPopupIfPresentAsync();
 
-                    var noResultsLocator = Page.Locator(AppConstants.NO_RESULTS_SELECTOR);
-                    var firstItemLocator = Page.Locator(AppConstants.MY_SEARCH_LIST_ITEM_SELECTOR).First;
-                    await firstItemLocator.Or(noResultsLocator).WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 30000 });
-
-                    if (await noResultsLocator.IsVisibleAsync())
+                    bool hasResults = await WaitForSearchResultsAsync();
+                    int itemCount = await Page.Locator(AppConstants.MY_SEARCH_LIST_ITEM_SELECTOR).CountAsync();
+                    Console.WriteLine($"キーワード '{keyword}' 検索結果: URL={Page.Url} / 表示件数={itemCount}");
+                    if (!hasResults)
                     {
                         Console.WriteLine($"キーワード '{keyword}' に一致する商品が見つかりませんでした。");
                         return false;
                     }
                 }
-                catch (TimeoutException)
+                catch (Exception ex)
                 {
-                    Console.WriteLine($"キーワード '{keyword}' の検索結果の読み込み中にタイムアウトしました。");
+                    Console.WriteLine($"キーワード '{keyword}' の検索結果の読み込み中にエラー/タイムアウトが発生しました: {ex.GetType().Name}: {ex.Message}");
                     await SaveDebugArtifactsAsync(Page);
                     return false;
                 }
             }
+            else
+            {
+                // 全件（キーワードなし）の場合も、1ページ目の結果が出ていることを確認する
+                try { await WaitForSearchResultsAsync(); } catch (TimeoutException) { }
+            }
 
-            Console.WriteLine("「もっと見る」ボタンをクリックして全コンテンツを表示します...");
-            int totalCount = 0;
+            return true;
+        }
+
+        // 検索/絞り込み後、結果グリッドの読み込みを待つ。アイテムが1件以上あれば true。
+        private async Task<bool> WaitForSearchResultsAsync()
+        {
+            if (Page == null) return false;
+
+            try { await Page.WaitForLoadStateAsync(LoadState.NetworkIdle, new() { Timeout = 15000 }); }
+            catch (TimeoutException) { }
+
             try
             {
-                // 総件数テキストを複数のセレクターで順に試す
-                // 例: "3,380本の動画" や "3,380件" などカンマ区切りに対応
-                string[] totalCountSelectors = new[]
-                {
-                    "h1 span.text-sm",           // 旧レイアウト
-                    "h1 span",                   // h1直下のspan全般
-                    "[class*='result'] span",    // result系クラス
-                    "p:has-text('本の動画')",     // videoモード件数テキスト
-                    "p:has-text('件')",          // 件数テキスト全般
-                };
-
-                foreach (var sel in totalCountSelectors)
-                {
-                    try
-                    {
-                        var el = Page.Locator(sel).First;
-                        if (await el.CountAsync() > 0 && await el.IsVisibleAsync())
-                        {
-                            string totalText = await el.InnerTextAsync();
-                            // カンマ区切りの数字（例: 3,380）も含めてマッチ
-                            var match = Regex.Match(totalText, @"[\d,]+");
-                            if (match.Success)
-                            {
-                                string numStr = match.Value.Replace(",", "");
-                                if (int.TryParse(numStr, out int parsed) && parsed > 0)
-                                {
-                                    totalCount = parsed;
-                                    Console.WriteLine($"総購入件数を検出しました: {totalCount}件 (セレクター: '{sel}', テキスト: '{totalText.Trim()}')");
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    catch { }
-                }
-
-                if (totalCount == 0)
-                {
-                    Console.WriteLine("総件数を検出できませんでした。「もっと見る」ボタンがなくなるまでクリックし続けます。");
-                }
+                await Page.Locator(AppConstants.MY_SEARCH_LIST_ITEM_SELECTOR).First
+                    .WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 15000 });
             }
-            catch (Exception ex)
+            catch (TimeoutException) { }
+
+            int count = await Page.Locator(AppConstants.MY_SEARCH_LIST_ITEM_SELECTOR).CountAsync();
+            return count > 0;
+        }
+
+        // ページネーション（?page=N のURLリンク）から全ページのURLを求める。
+        // 1ページ目は現在URL。以降は最大ページ番号までURLテンプレートから生成する。
+        private static readonly Regex PageParamPattern = new(@"([?&])page=\d+", RegexOptions.Compiled);
+        private async Task<List<string>> GetAllPageUrlsAsync()
+        {
+            var urls = new List<string>();
+            if (Page == null) return urls;
+
+            string hrefsJson;
+            try
             {
-                Console.WriteLine($"総件数の取得中にエラー（無視して処理を続行します）: {ex.Message}");
+                hrefsJson = await Page.EvaluateAsync<string>(@"() => {
+                    const anchors = Array.from(document.querySelectorAll('ul[data-e2eid=""pagination""] a[href]'));
+                    return JSON.stringify(anchors.map(a => a.href));
+                }");
             }
-
-            int clickCount = 0;
-            var loadMoreButton = Page.Locator(AppConstants.LOAD_MORE_BUTTON_SELECTOR);
-
-            while (true)
+            catch
             {
-                var currentItems = await Page.Locator(AppConstants.MY_SEARCH_LIST_ITEM_SELECTOR).CountAsync();
-                Console.WriteLine($"現在表示されているアイテム数: {currentItems} / {(totalCount > 0 ? totalCount.ToString() : "不明")}");
-
-                if (totalCount > 0 && currentItems >= totalCount)
-                {
-                    Console.WriteLine("検出された総件数に達したため、全件表示完了と判断します。");
-                    break;
-                }
-
-                try
-                {
-                    await Page.WaitForLoadStateAsync(LoadState.NetworkIdle, new() { Timeout = 3000 });
-                }
-                catch (TimeoutException) { }
-
-                int buttonCount = await loadMoreButton.CountAsync();
-                if (buttonCount == 0 || !await loadMoreButton.IsVisibleAsync())
-                {
-                    // 1秒待ってもう一度確認（読み込みのタイムラグ対策）
-                    await Page.WaitForTimeoutAsync(1000);
-                    buttonCount = await loadMoreButton.CountAsync();
-                    if (buttonCount == 0 || !await loadMoreButton.IsVisibleAsync())
-                    {
-                        Console.WriteLine("「もっと見る」ボタンが見つからない、または非表示のため、全件表示完了と判断します。");
-                        break;
-                    }
-                }
-
-                clickCount++;
-                Console.WriteLine($"「もっと見る」ボタンをクリックします（{clickCount}回目）...");
-
-                try
-                {
-                    await loadMoreButton.ScrollIntoViewIfNeededAsync(new() { Timeout = 5000 });
-                    await Page.WaitForTimeoutAsync(500);
-                    await loadMoreButton.ClickAsync(new() { Timeout = 5000 });
-                }
-                catch
-                {
-                    try
-                    {
-                        await loadMoreButton.ClickAsync(new() { Force = true, Timeout = 5000 });
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"「もっと見る」ボタンのクリック中にエラー: {ex.Message}");
-                        break;
-                    }
-                }
-
-                // 読み込み待ち
-                await Page.WaitForTimeoutAsync(1500);
+                urls.Add(Page.Url);
+                return urls;
             }
 
-            int finalItems = await Page.Locator(AppConstants.MY_SEARCH_LIST_ITEM_SELECTOR).CountAsync();
-            Console.WriteLine($"「もっと見る」ボタンを {clickCount} 回クリックしました。最終表示アイテム数: {finalItems}");
-            return true;
+            var arr = JsonNode.Parse(hrefsJson) as JsonArray;
+            string? template = null;
+            int maxPage = 1;
+            var pageNumRegex = new Regex(@"[?&]page=(\d+)");
+            if (arr != null)
+            {
+                foreach (var node in arr)
+                {
+                    string href = node?.ToString() ?? "";
+                    var m = pageNumRegex.Match(href);
+                    if (!m.Success) continue;
+                    template ??= href;   // page= を含む絶対URL（キーワード等の状態も保持している）
+                    int p = int.Parse(m.Groups[1].Value);
+                    if (p > maxPage) maxPage = p;
+                }
+            }
+
+            if (template == null)
+            {
+                // ページネーションなし（単一ページ）
+                urls.Add(Page.Url);
+                return urls;
+            }
+
+            // page=1..max の正規URLをテンプレートから生成（現在位置に依存せず順送りできる）
+            for (int p = 1; p <= maxPage; p++)
+            {
+                urls.Add(PageParamPattern.Replace(template, $"$1page={p}"));
+            }
+            return urls;
+        }
+
+        // 全ページを順に開き、各ページのDOMに対して onPage(現在ページ番号, 総ページ数) を実行する。
+        private async Task ForEachPageAsync(Func<int, int, Task> onPage)
+        {
+            if (Page == null) return;
+
+            var urls = await GetAllPageUrlsAsync();
+            int total = urls.Count;
+            Console.WriteLine($"全 {total} ページを巡回します。");
+
+            for (int i = 0; i < total; i++)
+            {
+                // 単一ページ（ページネーションなし）は現在の表示のまま処理する。
+                // 複数ページの場合は各ページの ?page=N URL へ確実に移動してから処理する
+                // （直前の処理が最終ページで終わっていても、常に1ページ目から順送りできる）。
+                if (total > 1)
+                {
+                    Console.WriteLine($"  ページ {i + 1}/{total} を開きます: {urls[i]}");
+                    await Page.GotoAsync(urls[i], new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+                    await CloseAdPopupIfPresentAsync();
+                    await WaitForSearchResultsAsync();
+                }
+                await onPage(i + 1, total);
+            }
+        }
+
+        // 現在の検索結果（全ページ）のグリッドHTMLを連結して返す。キーワード検索結果の保存に使う。
+        public async Task<string> CollectSearchResultHtmlAsync()
+        {
+            if (Page == null) return "";
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append("<html><body>\n");
+
+            await ForEachPageAsync(async (pageNum, total) =>
+            {
+                string gridHtml = await Page.EvaluateAsync<string>(@"() => {
+                    const grids = Array.from(document.querySelectorAll('ul.grid'));
+                    return grids.map(g => g.outerHTML).join('\n');
+                }");
+                int cnt = await Page.Locator(AppConstants.MY_SEARCH_LIST_ITEM_SELECTOR).CountAsync();
+                Console.WriteLine($"  ページ {pageNum}/{total}: {cnt} 件のアイテムを収集しました。");
+                sb.Append(gridHtml);
+                sb.Append('\n');
+            });
+
+            sb.Append("</body></html>\n");
+            return sb.ToString();
         }
 
         public async Task CollectPurchaseDatesAsync(DataManager dataManager)
@@ -233,11 +254,26 @@ namespace dmmCollect.Scrapers
             if (Page == null) throw new InvalidOperationException("Page is not initialized.");
 
             Console.WriteLine("購入日の収集を開始します...");
+            // 新レイアウトはページネーション式のため、全ページを巡回して各ページの購入日を収集する。
+            int totalUpdated = 0;
+            await ForEachPageAsync(async (pageNum, total) =>
+            {
+                Console.WriteLine($"  [ページ {pageNum}/{total}] 購入日を収集します...");
+                totalUpdated += await ProcessPurchaseDatesOnCurrentPageAsync(dataManager);
+            });
+            if (totalUpdated > 0) dataManager.SaveData();
+            Console.WriteLine($"購入日の収集が完了しました（合計更新: {totalUpdated}件）。");
+        }
+
+        private async Task<int> ProcessPurchaseDatesOnCurrentPageAsync(DataManager dataManager)
+        {
+            if (Page == null) return 0;
+
             var itemLocators = await Page.Locator("ul.grid li").AllAsync();
             if (itemLocators.Count == 0)
             {
                 Console.WriteLine("購入日を収集するアイテムが見つかりませんでした。");
-                return;
+                return 0;
             }
 
             int totalItems = itemLocators.Count;
@@ -259,14 +295,14 @@ namespace dmmCollect.Scrapers
             if (string.IsNullOrEmpty(jsonString))
             {
                 Console.WriteLine("DOMからのアイテム情報一括取得に失敗しました。");
-                return;
+                return 0;
             }
 
             var items = System.Text.Json.Nodes.JsonNode.Parse(jsonString) as System.Text.Json.Nodes.JsonArray;
             if (items == null)
             {
                 Console.WriteLine("JSONパース結果がJsonArrayではありません。");
-                return;
+                return 0;
             }
 
             var pendingItems = new List<(int Index, string RawTitle, System.Text.Json.Nodes.JsonObject? Entry)>();
@@ -335,8 +371,8 @@ namespace dmmCollect.Scrapers
 
             if (pendingItems.Count == 0)
             {
-                Console.WriteLine("すべてのアイテムの購入日が収集済みのため、処理をスキップします。");
-                return;
+                Console.WriteLine("このページのアイテムはすべて購入日収集済みのため、スキップします。");
+                return 0;
             }
 
             int updatedCount = 0;
@@ -371,6 +407,7 @@ namespace dmmCollect.Scrapers
                 dataManager.SaveData();
             }
             Console.WriteLine($"{updatedCount}件の購入日情報を更新しました（スキップ: {skippedCount}件）。");
+            return updatedCount;
         }
 
         private async Task<bool> ProcessSinglePurchaseItemAsync(ILocator itemLoc, string rawTitle, System.Text.Json.Nodes.JsonObject? entry, DataManager dataManager)
@@ -676,6 +713,18 @@ namespace dmmCollect.Scrapers
             if (Page == null) throw new InvalidOperationException("Page is not initialized.");
 
             Console.WriteLine("CIDの更新と画像のダウンロードを開始します...");
+            // 新レイアウトはページネーション式のため、全ページを巡回して各ページの画像/CIDを処理する。
+            await ForEachPageAsync(async (pageNum, total) =>
+            {
+                Console.WriteLine($"  [ページ {pageNum}/{total}] 画像/CIDを処理します...");
+                await ProcessCurrentPageImagesAsync(saveDir, dataManager);
+            });
+        }
+
+        private async Task ProcessCurrentPageImagesAsync(string saveDir, DataManager dataManager)
+        {
+            if (Page == null) throw new InvalidOperationException("Page is not initialized.");
+
             string htmlContent = await Page.ContentAsync();
             var parser = new HtmlParser();
             var document = await parser.ParseDocumentAsync(htmlContent);

@@ -181,7 +181,8 @@ namespace dmmCollect
                             Console.WriteLine($"[SAVE HTML] 全コンテンツ情報をFLATフォルダに保存: {flatHtmlPath}");
                             try
                             {
-                                string pageContent = await scraper.Page!.ContentAsync();
+                                // 新レイアウトはページネーション式のため、全ページのグリッドを集約して保存する
+                                string pageContent = await scraper.CollectSearchResultHtmlAsync();
                                 await File.WriteAllTextAsync(flatHtmlPath, pageContent);
                             }
                             catch (Exception ex)
@@ -234,7 +235,8 @@ namespace dmmCollect
                                         Console.WriteLine($"  [SAVE HTML] 検索結果を保存します: {htmlSavePath}");
                                         try
                                         {
-                                            string pageContent = await scraper.Page!.ContentAsync();
+                                            // 新レイアウトはページネーション式のため、全ページのグリッドを集約して保存する
+                                            string pageContent = await scraper.CollectSearchResultHtmlAsync();
                                             await File.WriteAllTextAsync(htmlSavePath, pageContent);
                                         }
                                         catch (Exception ex)
