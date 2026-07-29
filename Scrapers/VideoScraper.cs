@@ -249,6 +249,52 @@ namespace dmmCollect.Scrapers
             return sb.ToString();
         }
 
+        // フェーズ1の全処理（FLAT保存用HTML収集・画像/CID更新・購入日収集）を「1回のページ巡回」でまとめて行う。
+        // ページネーション化により各処理を個別に呼ぶと全ページを3周してしまうため、1周に集約する。
+        // ページURLは巡回開始時（1ページ目）に一括算出されるので、個別呼び出しで起きていた
+        // 「最終ページ始点だと総ページ数を1つ少なく誤検出する」取りこぼしも防げる。
+        // 戻り値は FLAT 保存用に集約したグリッドHTML。
+        public async Task<string> ProcessAllPagesAsync(string saveDir, DataManager dataManager)
+        {
+            if (Page == null) return "";
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append("<html><body>\n");
+            int totalPurchaseUpdated = 0;
+
+            await ForEachPageAsync(async (pageNum, total) =>
+            {
+                int cnt = await Page.Locator(AppConstants.MY_SEARCH_LIST_ITEM_SELECTOR).CountAsync();
+                Console.WriteLine($"  [ページ {pageNum}/{total}] グリッド収集・画像/CID・購入日をまとめて処理します（{cnt}件）...");
+
+                // 1) FLAT保存用のグリッドHTMLを収集（購入日クリックで開くポップアップの影響を避けるため最初に取得する）
+                try
+                {
+                    string gridHtml = await Page.EvaluateAsync<string>(@"() => {
+                        const grids = Array.from(document.querySelectorAll('ul.grid'));
+                        return grids.map(g => g.outerHTML).join('\n');
+                    }");
+                    sb.Append(gridHtml);
+                    sb.Append('\n');
+                }
+                catch (Exception ex) { Console.WriteLine($"    [WARN] グリッドHTML収集に失敗（続行）: {ex.Message}"); }
+
+                // 2) 画像ダウンロード・CID更新（読み取りのみ）
+                try { await ProcessCurrentPageImagesAsync(saveDir, dataManager); }
+                catch (Exception ex) { Console.WriteLine($"    [WARN] 画像/CID処理に失敗（続行）: {ex.Message}"); }
+
+                // 3) 購入日収集（アイテムをクリックしてDOMを変化させるため、必ず最後に行う）
+                try { totalPurchaseUpdated += await ProcessPurchaseDatesOnCurrentPageAsync(dataManager); }
+                catch (Exception ex) { Console.WriteLine($"    [WARN] 購入日収集に失敗（続行）: {ex.Message}"); }
+            });
+
+            sb.Append("</body></html>\n");
+
+            if (totalPurchaseUpdated > 0) dataManager.SaveData();
+            Console.WriteLine($"全ページの一括処理が完了しました（購入日更新: {totalPurchaseUpdated}件）。");
+            return sb.ToString();
+        }
+
         public async Task CollectPurchaseDatesAsync(DataManager dataManager)
         {
             if (Page == null) throw new InvalidOperationException("Page is not initialized.");

@@ -178,19 +178,19 @@ namespace dmmCollect
                         Console.WriteLine($"=== フェーズ1: FLATフォルダに全コンテンツ情報を保存 ===");
                         if (await scraper.SearchAndExpandAsync(null))
                         {
+                            // ページネーション化に伴い、FLAT用HTML収集・画像/CID更新・購入日収集を
+                            // 1回の全ページ巡回でまとめて実行する（従来は各処理が個別に全ページを巡回して3周していた）。
+                            string pageContent = await scraper.ProcessAllPagesAsync(imageDir, dataManager);
+
                             Console.WriteLine($"[SAVE HTML] 全コンテンツ情報をFLATフォルダに保存: {flatHtmlPath}");
                             try
                             {
-                                // 新レイアウトはページネーション式のため、全ページのグリッドを集約して保存する
-                                string pageContent = await scraper.CollectSearchResultHtmlAsync();
                                 await File.WriteAllTextAsync(flatHtmlPath, pageContent);
                             }
                             catch (Exception ex)
                             {
                                 Console.WriteLine($"[ERROR] FLATフォルダへのHTML保存に失敗: {ex.Message}");
                             }
-                            await scraper.UpdateCidsAndDownloadImagesAsync(imageDir, dataManager);
-                            await scraper.CollectPurchaseDatesAsync(dataManager);
                         }
                         else
                         {
