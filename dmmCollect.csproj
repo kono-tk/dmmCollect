@@ -9,6 +9,13 @@
     <ApplicationIcon>dmmCollect.ico</ApplicationIcon>
   </PropertyGroup>
 
+  <!-- GUI プロジェクト（dmmCollect.Gui/）は独立プロジェクト。本体の既定 glob (**/*.cs) が
+       取り込まないよう除外する。 -->
+  <ItemGroup>
+    <Compile Remove="dmmCollect.Gui\**\*.cs" />
+    <None Remove="dmmCollect.Gui\**" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.5.0" />
     <PackageReference Include="Microsoft.Playwright" Version="1.60.0" />

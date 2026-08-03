@@ -14,6 +14,8 @@ namespace dmmCollect
     {
         static async Task<int> Main(string[] args)
         {
+            // GUI 等で標準出力をリダイレクトして取り込む際に日本語が化けないよう UTF-8 で出力する
+            try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { /* リダイレクト不可環境は無視 */ }
 
             // 引数の簡易解析
             string mode = "video";

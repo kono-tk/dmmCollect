@@ -1,0 +1,292 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Text;
+using System.Text.Json;
+using System.Windows;
+
+namespace dmmCollect.Gui
+{
+    public partial class MainWindow : Window
+    {
+        private Process? _process;
+        private readonly string _settingsPath;
+
+        public MainWindow()
+        {
+            InitializeComponent();
+
+            _settingsPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "dmmCollectGui", "settings.json");
+
+            LoadSettings();
+            Closing += (_, _) => { SaveSettings(); TryKillProcess(); };
+        }
+
+        // ===== 実行 =====
+
+        private async void RunButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_process != null && !_process.HasExited)
+            {
+                return;
+            }
+
+            string? exePath = ResolveExePath();
+            if (exePath == null)
+            {
+                var dlg = new Microsoft.Win32.OpenFileDialog
+                {
+                    Title = "dmmCollect.exe を選択してください",
+                    Filter = "dmmCollect.exe|dmmCollect.exe|実行ファイル (*.exe)|*.exe"
+                };
+                if (dlg.ShowDialog() != true) return;
+                exePath = dlg.FileName;
+                _savedExePath = exePath;
+            }
+
+            SaveSettings();
+
+            var args = BuildArgs();
+            AppendLog($"=== 実行: {Path.GetFileName(exePath)} {string.Join(' ', args)} ===");
+
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = exePath,
+                    WorkingDirectory = Path.GetDirectoryName(exePath) ?? Environment.CurrentDirectory,
+                    UseShellExecute = false,       // 親の環境変数(DMM_LOGIN_ID等)を継承する
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    StandardErrorEncoding = Encoding.UTF8,
+                };
+                foreach (var a in args) psi.ArgumentList.Add(a);
+
+                _process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+                _process.OutputDataReceived += (_, ev) => { if (ev.Data != null) AppendLog(ev.Data); };
+                _process.ErrorDataReceived += (_, ev) => { if (ev.Data != null) AppendLog(ev.Data); };
+                _process.Exited += Process_Exited;
+
+                _process.Start();
+                _process.BeginOutputReadLine();
+                _process.BeginErrorReadLine();
+
+                SetRunningState(true);
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"[GUI-ERROR] 起動に失敗しました: {ex.Message}");
+                SetRunningState(false);
+            }
+
+            await System.Threading.Tasks.Task.CompletedTask;
+        }
+
+        private void Process_Exited(object? sender, EventArgs e)
+        {
+            int code = -1;
+            try { code = _process?.ExitCode ?? -1; } catch { /* ignore */ }
+            Dispatcher.BeginInvoke(() =>
+            {
+                AppendLog($"=== プロセス終了 (exit code: {code}) ===");
+                SetRunningState(false);
+            });
+        }
+
+        private void StopButton_Click(object sender, RoutedEventArgs e)
+        {
+            AppendLog("=== 停止を要求しました（プロセスツリーを終了します） ===");
+            TryKillProcess();
+        }
+
+        private void TryKillProcess()
+        {
+            try
+            {
+                if (_process != null && !_process.HasExited)
+                {
+                    _process.Kill(entireProcessTree: true);   // Playwright が起動する Chromium も含めて終了
+                }
+            }
+            catch { /* すでに終了 */ }
+        }
+
+        // ===== 引数組み立て =====
+
+        private List<string> BuildArgs()
+        {
+            var args = new List<string>();
+
+            string mode = ModeBooks.IsChecked == true ? "books"
+                        : ModeDojin.IsChecked == true ? "dojin"
+                        : ModeDlsite.IsChecked == true ? "dlsite"
+                        : "video";
+            args.Add("--mode");
+            args.Add(mode);
+
+            string kw = KeywordBox.Text.Trim();
+            if (!string.IsNullOrEmpty(kw))
+            {
+                args.Add("-k");
+                foreach (var token in kw.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    args.Add(token);
+                }
+            }
+
+            string pages = PagesBox.Text.Trim();
+            if (!string.IsNullOrEmpty(pages))
+            {
+                args.Add("-p");
+                args.Add(pages);
+            }
+
+            if (ChkHeadful.IsChecked == true) args.Add("--headful");
+            if (ChkDebug.IsChecked == true) args.Add("--debug");
+            if (ChkSyncOnly.IsChecked == true) args.Add("--sync-only");
+            if (ChkRenewLnk.IsChecked == true) args.Add("--renew-lnk");
+            if (ChkLostChild.IsChecked == true) args.Add("--lost-child");
+
+            return args;
+        }
+
+        // ===== exe パス解決 =====
+
+        private string? _savedExePath;
+
+        private string? ResolveExePath()
+        {
+            if (!string.IsNullOrEmpty(_savedExePath) && File.Exists(_savedExePath))
+            {
+                return _savedExePath;
+            }
+
+            string guiDir = AppContext.BaseDirectory;
+            var candidates = new[]
+            {
+                Path.Combine(guiDir, "dmmCollect.exe"),
+                // dmmCollect.Gui/bin/<cfg>/net10.0-windows/ から見た本体の既定出力先
+                Path.GetFullPath(Path.Combine(guiDir, "..", "..", "..", "..", "bin", "Debug", "net10.0", "dmmCollect.exe")),
+                Path.GetFullPath(Path.Combine(guiDir, "..", "..", "..", "..", "bin", "Release", "net10.0", "dmmCollect.exe")),
+            };
+            foreach (var c in candidates)
+            {
+                if (File.Exists(c)) return c;
+            }
+            return null;
+        }
+
+        // ===== ログ =====
+
+        private const int LogMaxChars = 800_000;
+
+        private void AppendLog(string line)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(() => AppendLog(line));
+                return;
+            }
+
+            if (LogBox.Text.Length > LogMaxChars)
+            {
+                LogBox.Text = LogBox.Text.Substring(LogBox.Text.Length - LogMaxChars / 2);
+            }
+
+            LogBox.AppendText(line + Environment.NewLine);
+            if (ChkAutoScroll.IsChecked == true)
+            {
+                LogBox.ScrollToEnd();
+            }
+        }
+
+        private void ClearLogButton_Click(object sender, RoutedEventArgs e)
+        {
+            LogBox.Clear();
+        }
+
+        private void SetRunningState(bool running)
+        {
+            RunButton.IsEnabled = !running;
+            StopButton.IsEnabled = running;
+            StatusText.Text = running ? "実行中..." : "待機中";
+        }
+
+        // ===== 設定の保存/復元 =====
+
+        private class Settings
+        {
+            public string Mode { get; set; } = "video";
+            public string Keywords { get; set; } = "";
+            public string Pages { get; set; } = "1";
+            public bool Headful { get; set; }
+            public bool Debug { get; set; }
+            public bool SyncOnly { get; set; }
+            public bool RenewLnk { get; set; }
+            public bool LostChild { get; set; }
+            public bool AutoScroll { get; set; } = true;
+            public string? ExePath { get; set; }
+        }
+
+        private void LoadSettings()
+        {
+            try
+            {
+                if (!File.Exists(_settingsPath)) return;
+                var s = JsonSerializer.Deserialize<Settings>(File.ReadAllText(_settingsPath));
+                if (s == null) return;
+
+                ModeVideo.IsChecked = s.Mode == "video";
+                ModeBooks.IsChecked = s.Mode == "books";
+                ModeDojin.IsChecked = s.Mode == "dojin";
+                ModeDlsite.IsChecked = s.Mode == "dlsite";
+                if (s.Mode is not ("video" or "books" or "dojin" or "dlsite")) ModeVideo.IsChecked = true;
+
+                KeywordBox.Text = s.Keywords;
+                PagesBox.Text = s.Pages;
+                ChkHeadful.IsChecked = s.Headful;
+                ChkDebug.IsChecked = s.Debug;
+                ChkSyncOnly.IsChecked = s.SyncOnly;
+                ChkRenewLnk.IsChecked = s.RenewLnk;
+                ChkLostChild.IsChecked = s.LostChild;
+                ChkAutoScroll.IsChecked = s.AutoScroll;
+                _savedExePath = s.ExePath;
+            }
+            catch { /* 破損時は既定値のまま */ }
+        }
+
+        private void SaveSettings()
+        {
+            try
+            {
+                string mode = ModeBooks.IsChecked == true ? "books"
+                            : ModeDojin.IsChecked == true ? "dojin"
+                            : ModeDlsite.IsChecked == true ? "dlsite"
+                            : "video";
+
+                var s = new Settings
+                {
+                    Mode = mode,
+                    Keywords = KeywordBox.Text,
+                    Pages = PagesBox.Text,
+                    Headful = ChkHeadful.IsChecked == true,
+                    Debug = ChkDebug.IsChecked == true,
+                    SyncOnly = ChkSyncOnly.IsChecked == true,
+                    RenewLnk = ChkRenewLnk.IsChecked == true,
+                    LostChild = ChkLostChild.IsChecked == true,
+                    AutoScroll = ChkAutoScroll.IsChecked == true,
+                    ExePath = _savedExePath,
+                };
+
+                Directory.CreateDirectory(Path.GetDirectoryName(_settingsPath)!);
+                File.WriteAllText(_settingsPath, JsonSerializer.Serialize(s, new JsonSerializerOptions { WriteIndented = true }));
+            }
+            catch { /* 保存失敗は無視 */ }
+        }
+    }
+}
