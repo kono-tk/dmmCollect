@@ -81,6 +81,11 @@ namespace dmmCollect
         public string DataPath { get; private set; } = "";
         public string ImageDirectory { get; private set; } = "images";
 
+        // 出演者エイリアスの共有ファイル。dmmConfig.json と同じディレクトリに、モード別で配置する。
+        // 例: <config dir>/performer_aliases_video.json
+        public string PerformerAliasesPath =>
+            Path.Combine(Path.GetDirectoryName(ConfigPath) ?? ".", $"performer_aliases_{Mode}.json");
+
         public List<string> TargetRoots { get; private set; } = new();
         public int MaxAltLength { get; private set; } = 100;
         public int MaxShortcutFilenameLength { get; private set; } = 100;

@@ -101,7 +101,7 @@ namespace dmmCollect
             Console.WriteLine($"ImageDirectory: {imageDir}");
             Console.WriteLine($"DataPath: {dataPath}");
 
-            var dataManager = new DataManager(dataPath, backupOnInit: true);
+            var dataManager = new DataManager(dataPath, backupOnInit: true, performerAliasesPath: config.PerformerAliasesPath);
 
             // === スクレイピング部 (dmmLogin) ===
             if (!syncOnly)

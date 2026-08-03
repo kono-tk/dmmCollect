@@ -20,15 +20,18 @@ namespace dmmCollect
         private readonly Dictionary<string, List<JsonObject>> _colonRemovedMatchCache = new();
         private readonly Dictionary<string, List<JsonObject>> _flexibleMatchCache = new();
         private readonly Dictionary<string, HashSet<string>> _aliasGroups = new(StringComparer.OrdinalIgnoreCase);
+        // 出演者エイリアスの外部共有ファイル（モード別 performer_aliases_{mode}.json）。null/未存在なら data.json 内にフォールバック。
+        private readonly string? _performerAliasesPath;
         private readonly Dictionary<int, string> _sanCache = new();
         private readonly Dictionary<int, string?> _sanFirst3Cache = new();
 
         private static readonly Regex TitlePrefixPattern = new(@"^(HD|8K|HQ|4K|FULLHD|SD|SP|PPV|Blu-ray|BluRay|DVD|\s)+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex HashPattern = new(@"[_\-]?[a-fA-F0-9]{6,32}$", RegexOptions.Compiled);
 
-        public DataManager(string dataPath, bool backupOnInit = false)
+        public DataManager(string dataPath, bool backupOnInit = false, string? performerAliasesPath = null)
         {
             DataPath = dataPath;
+            _performerAliasesPath = performerAliasesPath;
             if (backupOnInit)
             {
                 CreateBackup();
@@ -66,49 +69,7 @@ namespace dmmCollect
 
                 Data = Data.Where(item => item != null).ToList();
 
-                _aliasGroups.Clear();
-                if (rootNode is JsonObject rootObj && rootObj.ContainsKey("performer_aliases"))
-                {
-                    var aliasesNode = rootObj["performer_aliases"];
-                    if (aliasesNode is JsonObject aliasesObj)
-                    {
-                        foreach (var property in aliasesObj)
-                        {
-                            string primaryName = property.Key;
-                            var aliasList = property.Value?.AsArray()?.Select(n => n?.ToString() ?? "").Where(s => !string.IsNullOrEmpty(s)).ToList() ?? new List<string>();
-                            
-                            var group = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { primaryName };
-                            foreach (var alias in aliasList)
-                            {
-                                group.Add(alias);
-                            }
-                            
-                            foreach (var name in group)
-                            {
-                                _aliasGroups[name] = group;
-                            }
-                        }
-                    }
-                    else if (aliasesNode is JsonArray aliasesArr)
-                    {
-                        foreach (var itemNode in aliasesArr)
-                        {
-                            if (itemNode is JsonArray groupArr)
-                            {
-                                var group = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                                foreach (var n in groupArr)
-                                {
-                                    string name = n?.ToString() ?? "";
-                                    if (!string.IsNullOrEmpty(name)) group.Add(name);
-                                }
-                                foreach (var name in group)
-                                {
-                                    _aliasGroups[name] = group;
-                                }
-                            }
-                        }
-                    }
-                }
+                LoadPerformerAliases(rootNode);
 
                 _lastMTime = File.GetLastWriteTime(DataPath);
                 BuildIndexes();
@@ -118,6 +79,77 @@ namespace dmmCollect
             {
                 Console.WriteLine($"Error loading data.json: {ex.Message}");
                 throw;
+            }
+        }
+
+        // 出演者エイリアスを読み込む。外部共有ファイル（performer_aliases_{mode}.json）を優先し、
+        // 無ければ data.json 内の "performer_aliases"（旧形式・移行期の保険）にフォールバックする。
+        private void LoadPerformerAliases(JsonNode? dataRootNode)
+        {
+            _aliasGroups.Clear();
+
+            if (!string.IsNullOrEmpty(_performerAliasesPath) && File.Exists(_performerAliasesPath))
+            {
+                try
+                {
+                    var node = JsonNode.Parse(File.ReadAllText(_performerAliasesPath));
+                    PopulateAliasGroups(node);
+                    Console.WriteLine($"DataManager: Loaded performer aliases from '{_performerAliasesPath}' ({_aliasGroups.Count} names)");
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"DataManager: Failed to read performer aliases file '{_performerAliasesPath}': {ex.Message}");
+                }
+            }
+
+            // フォールバック: data.json 内の performer_aliases
+            if (dataRootNode is JsonObject rootObj && rootObj.ContainsKey("performer_aliases"))
+            {
+                PopulateAliasGroups(rootObj["performer_aliases"]);
+            }
+        }
+
+        // エイリアス定義（{ "主名": [別名...] } 形式、または [[名前A,名前B], ...] 形式）から _aliasGroups を構築する。
+        private void PopulateAliasGroups(JsonNode? aliasesNode)
+        {
+            if (aliasesNode is JsonObject aliasesObj)
+            {
+                foreach (var property in aliasesObj)
+                {
+                    string primaryName = property.Key;
+                    var aliasList = property.Value?.AsArray()?.Select(n => n?.ToString() ?? "").Where(s => !string.IsNullOrEmpty(s)).ToList() ?? new List<string>();
+
+                    var group = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { primaryName };
+                    foreach (var alias in aliasList)
+                    {
+                        group.Add(alias);
+                    }
+
+                    foreach (var name in group)
+                    {
+                        _aliasGroups[name] = group;
+                    }
+                }
+            }
+            else if (aliasesNode is JsonArray aliasesArr)
+            {
+                foreach (var itemNode in aliasesArr)
+                {
+                    if (itemNode is JsonArray groupArr)
+                    {
+                        var group = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var n in groupArr)
+                        {
+                            string name = n?.ToString() ?? "";
+                            if (!string.IsNullOrEmpty(name)) group.Add(name);
+                        }
+                        foreach (var name in group)
+                        {
+                            _aliasGroups[name] = group;
+                        }
+                    }
+                }
             }
         }
 
