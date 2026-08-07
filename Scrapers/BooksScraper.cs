@@ -567,6 +567,8 @@ namespace dmmCollect.Scrapers
 
             if (itemsToDownload.Count > 0 && Page != null)
             {
+                BackupHelper.CreateBackup(dataManager.DataPath);
+
                 int currentDlIdx = 0;
                 foreach (var item in itemsToDownload)
                 {
@@ -622,7 +624,7 @@ namespace dmmCollect.Scrapers
 
                     item["content_filename"] = finalFilename ?? "DOWNLOAD_FAILED";
                     dataManager.UpdateOrAddEntry(item, isBook: true);
-                    dataManager.SaveData();
+                    dataManager.SaveData(createBackup: false);
 
                     if (!string.IsNullOrEmpty(finalFilename) && finalFilename != "DOWNLOAD_FAILED")
                     {
