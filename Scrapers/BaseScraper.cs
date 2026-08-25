@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 
 namespace dmmCollect.Scrapers
@@ -200,6 +201,12 @@ namespace dmmCollect.Scrapers
         {
             if (Page == null) throw new InvalidOperationException("Page is not initialized.");
 
+            // DMMはトップページ遷移時にドメインを www.dmm.co.jp から www.fanza.jp へ
+            // 誘導する場合がある（サイトのリブランディング）。設定上のドメインだけで
+            // 厳密一致させるとタイムアウトするため、既知のドメインいずれでも同一パスに
+            // 到達すれば遷移完了とみなす。
+            var topUrlPattern = BuildTopPageRegex(Urls["top"]);
+
             try
             {
                 Console.WriteLine("DMMトップページにアクセスし、年齢確認を通過します...");
@@ -210,7 +217,7 @@ namespace dmmCollect.Scrapers
                 // DMM側の年齢確認ページは表示文言が複数パターン存在する（"はい" / "18歳以上なので進む" 等、
                 // A/Bテストと思われる）。文言に関わらず、遷移先href（declared=yes）で判定することで両対応する。
                 await Page.Locator("a[href*='declared=yes']").First.ClickAsync();
-                await Page.WaitForURLAsync(Urls["top"]);
+                await Page.WaitForURLAsync(topUrlPattern);
 
                 await CloseAdPopupIfPresentAsync();
 
@@ -222,7 +229,7 @@ namespace dmmCollect.Scrapers
                 await Page.Locator(AppConstants.LOGIN_ID_SELECTOR).FillAsync(loginId);
                 await Page.Locator(AppConstants.PASSWORD_SELECTOR).FillAsync(password);
                 await Page.Locator(AppConstants.LOGIN_BUTTON_SELECTOR).ClickAsync();
-                await Page.WaitForURLAsync(Urls["top"]);
+                await Page.WaitForURLAsync(topUrlPattern);
 
                 await CloseAdPopupIfPresentAsync();
 
@@ -234,6 +241,13 @@ namespace dmmCollect.Scrapers
                 await SaveDebugArtifactsAsync(Page, "login");
                 throw;
             }
+        }
+
+        private static Regex BuildTopPageRegex(string configuredTopUrl)
+        {
+            string path = new Uri(configuredTopUrl).AbsolutePath.TrimEnd('/');
+            string pathPattern = Regex.Escape(path);
+            return new Regex($@"(dmm\.co\.jp|fanza\.jp){pathPattern}/?(\?.*)?$");
         }
     }
 }
