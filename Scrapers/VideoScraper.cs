@@ -1,6 +1,8 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
@@ -38,17 +40,6 @@ namespace dmmCollect.Scrapers
             await CloseAdPopupIfPresentAsync();
 
             Console.WriteLine("購入済み商品リストの読み込みを待機します...");
-
-            try
-            {
-                Console.WriteLine("ネットワークがアイドル状態になるのを待機します...");
-                await Page.WaitForLoadStateAsync(LoadState.NetworkIdle, new() { Timeout = 30000 });
-                Console.WriteLine("ネットワークはアイドル状態です。");
-            }
-            catch (TimeoutException)
-            {
-                Console.WriteLine("ネットワークアイドルの待機がタイムアウトしました。処理を続行します。");
-            }
 
             var loadingIndicator = Page.Locator(AppConstants.SEARCH_DATA_LOADING_SELECTOR);
             try
@@ -128,12 +119,11 @@ namespace dmmCollect.Scrapers
         }
 
         // 検索/絞り込み後、結果グリッドの読み込みを待つ。アイテムが1件以上あれば true。
+        // NetworkIdleは広告/トラッキング系ビーコン（Twitter広告計測やDSP等）が継続的に発火し続けるため
+        // ほぼ常にタイムアウトするだけで意味がなく、実データの到着を示す商品要素の可視化待ちのみで判定する。
         private async Task<bool> WaitForSearchResultsAsync()
         {
             if (Page == null) return false;
-
-            try { await Page.WaitForLoadStateAsync(LoadState.NetworkIdle, new() { Timeout = 15000 }); }
-            catch (TimeoutException) { }
 
             try
             {
@@ -677,6 +667,9 @@ namespace dmmCollect.Scrapers
                                 }
 
                                 Console.WriteLine($"  [{i + 1}/{downloadLinks.Count}] ダウンロード中: {fileName}...");
+                                var stopwatch = Stopwatch.StartNew();
+                                using var progressCts = new CancellationTokenSource();
+                                var progressTask = ReportDownloadProgressAsync(fileName, stopwatch, progressCts.Token);
                                 try
                                 {
                                     var download = await Page.RunAndWaitForDownloadAsync(async () =>
@@ -684,11 +677,19 @@ namespace dmmCollect.Scrapers
                                         await linkLoc.ClickAsync(new() { Timeout = 10000 });
                                     });
                                     await download.SaveAsAsync(filePath);
-                                    Console.WriteLine($"  [COMPLETED] ダウンロード完了: {fileName}");
+                                    stopwatch.Stop();
+                                    progressCts.Cancel();
+                                    await progressTask;
+
+                                    long fileSize = File.Exists(filePath) ? new FileInfo(filePath).Length : 0;
+                                    Console.WriteLine($"\r  [COMPLETED] ダウンロード完了: {fileName} ({FormatBytes(fileSize)}, 所要時間: {FormatElapsed(stopwatch.Elapsed)})".PadRight(80));
                                 }
                                 catch (Exception dex)
                                 {
-                                    Console.WriteLine($"  [ERROR] ダウンロード失敗 ({fileName}): {dex.Message}");
+                                    stopwatch.Stop();
+                                    progressCts.Cancel();
+                                    await progressTask;
+                                    Console.WriteLine($"\r  [ERROR] ダウンロード失敗 ({fileName}): {dex.Message}".PadRight(80));
                                 }
                             }
                         }
@@ -1002,6 +1003,63 @@ namespace dmmCollect.Scrapers
             {
                 dataManager.SaveData();
             }
+        }
+
+        private async Task ReportDownloadProgressAsync(string fileName, Stopwatch stopwatch, CancellationToken token)
+        {
+            string? trackedFile = null;
+            var seenBefore = Directory.Exists(DownloadTempDir)
+                ? new HashSet<string>(Directory.GetFiles(DownloadTempDir))
+                : new HashSet<string>();
+
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    if (trackedFile == null && Directory.Exists(DownloadTempDir))
+                    {
+                        trackedFile = Directory.GetFiles(DownloadTempDir).FirstOrDefault(f => !seenBefore.Contains(f));
+                    }
+
+                    if (trackedFile != null && File.Exists(trackedFile))
+                    {
+                        long size = new FileInfo(trackedFile).Length;
+                        Console.Write($"\r    受信中: {fileName} - {FormatBytes(size)} ({FormatElapsed(stopwatch.Elapsed)})".PadRight(80));
+                    }
+                }
+                catch
+                {
+                    // ダウンロード中のファイルは移動/削除されることがあるため無視
+                }
+
+                try
+                {
+                    await Task.Delay(500, token);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
+        }
+
+        private static string FormatBytes(long bytes)
+        {
+            const long KB = 1024, MB = KB * 1024, GB = MB * 1024;
+            return bytes switch
+            {
+                >= GB => $"{bytes / (double)GB:F2} GB",
+                >= MB => $"{bytes / (double)MB:F2} MB",
+                >= KB => $"{bytes / (double)KB:F1} KB",
+                _ => $"{bytes} B"
+            };
+        }
+
+        private static string FormatElapsed(TimeSpan elapsed)
+        {
+            return elapsed.TotalMinutes >= 1
+                ? $"{(int)elapsed.TotalMinutes}分{elapsed.Seconds}秒"
+                : $"{elapsed.TotalSeconds:F1}秒";
         }
 
         private async Task DownloadImageAsync(string url, string savePath)

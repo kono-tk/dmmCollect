@@ -19,6 +19,7 @@ namespace dmmCollect.Scrapers
         protected readonly int SlowMo;
         protected readonly bool IsDebugMode;
         protected readonly bool Verbose;
+        protected readonly string DownloadTempDir = Path.Combine(Path.GetTempPath(), "dmmCollect_downloads");
 
         public BaseScraper(Dictionary<string, string> urls, bool headless, int slowMo, bool isDebugMode, bool verbose = false)
         {
@@ -32,11 +33,14 @@ namespace dmmCollect.Scrapers
         public async Task InitializeAsync()
         {
             PlaywrightInstance = await Playwright.CreateAsync();
-            
+
+            Directory.CreateDirectory(DownloadTempDir);
+
             var launchOptions = new BrowserTypeLaunchOptions
             {
                 Headless = Headless,
                 SlowMo = SlowMo,
+                DownloadsPath = DownloadTempDir,
                 Args = new[] { "--ignore-certificate-errors", "--ignore-ssl-errors", "--ignore-certificate-errors-spki-list" }
             };
 

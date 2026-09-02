@@ -12,6 +12,8 @@ namespace dmmCollect.Gui
     {
         private Process? _process;
         private readonly string _settingsPath;
+        private StreamWriter? _logFileWriter;
+        private string? _logFilePath;
 
         public MainWindow()
         {
@@ -22,7 +24,7 @@ namespace dmmCollect.Gui
                 "dmmCollectGui", "settings.json");
 
             LoadSettings();
-            Closing += (_, _) => { SaveSettings(); TryKillProcess(); };
+            Closing += (_, _) => { SaveSettings(); TryKillProcess(); CloseLogFile(); };
         }
 
         // ===== 実行 =====
@@ -50,7 +52,12 @@ namespace dmmCollect.Gui
             SaveSettings();
 
             var args = BuildArgs();
+            OpenLogFile();
             AppendLog($"=== 実行: {Path.GetFileName(exePath)} {string.Join(' ', args)} ===");
+            if (_logFilePath != null)
+            {
+                AppendLog($"=== ログファイル: {_logFilePath} ===");
+            }
 
             try
             {
@@ -185,6 +192,33 @@ namespace dmmCollect.Gui
 
         private const int LogMaxChars = 800_000;
 
+        private void OpenLogFile()
+        {
+            CloseLogFile();
+            try
+            {
+                string logsDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "dmmCollectGui", "logs");
+                Directory.CreateDirectory(logsDir);
+
+                _logFilePath = Path.Combine(logsDir, $"dmmCollect_{DateTime.Now:yyyyMMdd_HHmmss}.log");
+                _logFileWriter = new StreamWriter(_logFilePath, append: false, new UTF8Encoding(false)) { AutoFlush = true };
+            }
+            catch (Exception ex)
+            {
+                _logFileWriter = null;
+                _logFilePath = null;
+                Dispatcher.BeginInvoke(() => AppendLog($"[GUI-ERROR] ログファイルを開けませんでした: {ex.Message}"));
+            }
+        }
+
+        private void CloseLogFile()
+        {
+            try { _logFileWriter?.Dispose(); } catch { /* ignore */ }
+            _logFileWriter = null;
+        }
+
         private void AppendLog(string line)
         {
             if (!Dispatcher.CheckAccess())
@@ -192,6 +226,8 @@ namespace dmmCollect.Gui
                 Dispatcher.BeginInvoke(() => AppendLog(line));
                 return;
             }
+
+            try { _logFileWriter?.WriteLine(line); } catch { /* ignore */ }
 
             if (LogBox.Text.Length > LogMaxChars)
             {
