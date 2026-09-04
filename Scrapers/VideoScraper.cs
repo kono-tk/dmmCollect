@@ -878,7 +878,7 @@ namespace dmmCollect.Scrapers
 
                 if (string.IsNullOrEmpty(imageUrl) || string.IsNullOrEmpty(title)) continue;
 
-                string imageFilename = Path.GetFileName(imageUrl);
+                string imageFilename = Path.GetFileName(imageUrl).Split('?')[0];
                 string? cid = null;
 
                 // 親要素から a タグを辿って CID を探す
@@ -935,7 +935,8 @@ namespace dmmCollect.Scrapers
                 }
 
                 // 画像ダウンロード
-                await DownloadImageAsync(imageUrl, Path.Combine(saveDir, imageFilename));
+                string cleanImageUrl = imageUrl.Split('?')[0];
+                await DownloadImageAsync(cleanImageUrl, Path.Combine(saveDir, imageFilename));
 
                 if ((i + 1) % 10 == 0 || i + 1 == total)
                 {
@@ -975,7 +976,7 @@ namespace dmmCollect.Scrapers
 
                     if (string.IsNullOrEmpty(imageUrl) || string.IsNullOrEmpty(title)) continue;
 
-                    string imageFilename = Path.GetFileName(imageUrl);
+                    string imageFilename = Path.GetFileName(imageUrl).Split('?')[0];
 
                     var entryData = new JsonObject
                     {
@@ -989,7 +990,8 @@ namespace dmmCollect.Scrapers
                         dataUpdated = true;
                     }
 
-                    await DownloadImageAsync(imageUrl, Path.Combine(saveDir, imageFilename));
+                    string cleanImageUrl = imageUrl.Split('?')[0];
+                    await DownloadImageAsync(cleanImageUrl, Path.Combine(saveDir, imageFilename));
                 }
 
                 if ((i + 1) % 10 == 0 || i + 1 == total)

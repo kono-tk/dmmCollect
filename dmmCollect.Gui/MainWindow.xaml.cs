@@ -219,6 +219,21 @@ namespace dmmCollect.Gui
             _logFileWriter = null;
         }
 
+        // dmmCollect側は進捗行を Console.Write("\r...") で書いており、リダイレクト経由では
+        // \r 自体が行区切りとして扱われるため、GUI側には「空行」「受信中: ...」「[COMPLETED]/[ERROR] ...」
+        // が別々の行としてそのまま届いてしまう（本来は同じ行を上書きする想定のもの）。
+        // ここではその一連の行を検出し、ログ末尾の1行を書き換える形にまとめて「上書き表示」を再現する。
+        private static bool IsCollapsibleProgressLine(string line)
+        {
+            string t = line.Trim();
+            return t.Length == 0
+                || t.StartsWith("受信中: ")
+                || t.StartsWith("[COMPLETED] ダウンロード完了")
+                || t.StartsWith("[ERROR] ダウンロード失敗");
+        }
+
+        private int _collapseStart = -1;
+
         private void AppendLog(string line)
         {
             if (!Dispatcher.CheckAccess())
@@ -229,9 +244,28 @@ namespace dmmCollect.Gui
 
             try { _logFileWriter?.WriteLine(line); } catch { /* ignore */ }
 
+            bool collapsible = IsCollapsibleProgressLine(line);
+            if (collapsible && _collapseStart >= 0 && _collapseStart <= LogBox.Text.Length)
+            {
+                LogBox.Text = LogBox.Text.Substring(0, _collapseStart);
+            }
+
             if (LogBox.Text.Length > LogMaxChars)
             {
                 LogBox.Text = LogBox.Text.Substring(LogBox.Text.Length - LogMaxChars / 2);
+                _collapseStart = -1;
+            }
+
+            if (collapsible)
+            {
+                if (_collapseStart < 0 || _collapseStart > LogBox.Text.Length)
+                {
+                    _collapseStart = LogBox.Text.Length;
+                }
+            }
+            else
+            {
+                _collapseStart = -1;
             }
 
             LogBox.AppendText(line + Environment.NewLine);
