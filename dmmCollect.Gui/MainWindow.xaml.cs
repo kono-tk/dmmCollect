@@ -219,20 +219,21 @@ namespace dmmCollect.Gui
             _logFileWriter = null;
         }
 
-        // dmmCollect側は進捗行を Console.Write("\r...") で書いており、リダイレクト経由では
-        // \r 自体が行区切りとして扱われるため、GUI側には「空行」「受信中: ...」「[COMPLETED]/[ERROR] ...」
-        // が別々の行としてそのまま届いてしまう（本来は同じ行を上書きする想定のもの）。
-        // ここではその一連の行を検出し、ログ末尾の1行を書き換える形にまとめて「上書き表示」を再現する。
-        private static bool IsCollapsibleProgressLine(string line)
+        // dmmCollect側はダウンロード進捗行を Console.Write("\r...") で書いており、リダイレクト経由では
+        // \r 自体が行区切りとして扱われるため、GUI側には「空行」「受信中: ...」がそのまま別々の行として届く
+        // （本来は同じ行を上書きする想定のもの）。ここでは連続する「受信中: 」行だけを1行に畳み込み、
+        // 直後に届く [COMPLETED]/[ERROR] 行でその1行を確定表示に置き換えて「上書き表示」を再現する。
+        // 空行はこの畳み込みの対象にしない（別の\r系出力＝「進行状況: ...」等と混ざって、直前の
+        // [COMPLETED]/[ERROR] 行を誤って消してしまうことがあるため）。
+        private static bool IsProgressTickLine(string line) => line.Trim().StartsWith("受信中: ");
+
+        private static bool IsDownloadResultLine(string line)
         {
             string t = line.Trim();
-            return t.Length == 0
-                || t.StartsWith("受信中: ")
-                || t.StartsWith("[COMPLETED] ダウンロード完了")
-                || t.StartsWith("[ERROR] ダウンロード失敗");
+            return t.StartsWith("[COMPLETED] ダウンロード完了") || t.StartsWith("[ERROR] ダウンロード失敗");
         }
 
-        private int _collapseStart = -1;
+        private int _progressTickStart = -1;
 
         private void AppendLog(string line)
         {
@@ -244,28 +245,33 @@ namespace dmmCollect.Gui
 
             try { _logFileWriter?.WriteLine(line); } catch { /* ignore */ }
 
-            bool collapsible = IsCollapsibleProgressLine(line);
-            if (collapsible && _collapseStart >= 0 && _collapseStart <= LogBox.Text.Length)
+            bool isTick = IsProgressTickLine(line);
+            bool isResult = IsDownloadResultLine(line);
+
+            if ((isTick || isResult) && _progressTickStart >= 0 && _progressTickStart <= LogBox.Text.Length)
             {
-                LogBox.Text = LogBox.Text.Substring(0, _collapseStart);
+                // 直前が進捗tickの行だった場合のみ、その行を今回の内容で置き換える
+                LogBox.Text = LogBox.Text.Substring(0, _progressTickStart);
             }
 
             if (LogBox.Text.Length > LogMaxChars)
             {
                 LogBox.Text = LogBox.Text.Substring(LogBox.Text.Length - LogMaxChars / 2);
-                _collapseStart = -1;
+                _progressTickStart = -1;
             }
 
-            if (collapsible)
+            if (isTick)
             {
-                if (_collapseStart < 0 || _collapseStart > LogBox.Text.Length)
+                if (_progressTickStart < 0 || _progressTickStart > LogBox.Text.Length)
                 {
-                    _collapseStart = LogBox.Text.Length;
+                    _progressTickStart = LogBox.Text.Length;
                 }
             }
             else
             {
-                _collapseStart = -1;
+                // [COMPLETED]/[ERROR] で確定表示にした後は、以降の行（空行や次のダウンロード開始行）が
+                // 誤ってこの行を上書きしないよう畳み込みを終了する
+                _progressTickStart = -1;
             }
 
             LogBox.AppendText(line + Environment.NewLine);
