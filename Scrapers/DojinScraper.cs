@@ -113,7 +113,7 @@ namespace dmmCollect.Scrapers
                             var match = ProductIdPattern.Match(href);
                             if (match.Success)
                             {
-                                // 識別子は cid に統一する。移行期間中は product_id にも同じ値を入れる
+                                // URL の product_id= が作品の識別子。data.json には cid として書く
                                 ItemIdentity.Set(itemData, match.Groups[1].Value);
                             }
                         }

@@ -398,12 +398,11 @@ namespace dmmCollect.Scrapers
                                 ["title"] = seriesTitle,
                                 ["detail_url"] = detailUrl,
                                 ["download_url"] = downloadUrl ?? "",
-                                ["product_id"] = productId ?? "",
                                 ["image_filename"] = imageFilename ?? ""
                             };
-                            // 識別子は cid に統一する（取れなかったときは既存の cid を空で上書きしない）
+                            // 識別子は cid（取れなかったときは既存の cid を空で上書きしない）
                             if (!string.IsNullOrEmpty(productId)) book[ItemIdentity.Key] = productId;
-                            standaloneBooks.Add(book);
+                            standaloneBooks.Add(book);   // Dictionary なので ItemIdentity.Set は使えない
                         }
                     }
                     catch (Exception ex)
@@ -462,11 +461,10 @@ namespace dmmCollect.Scrapers
                             ["title"] = subtitle,
                             ["detail_url"] = detailUrl,
                             ["download_url"] = downloadUrl ?? "",
-                            ["product_id"] = productId ?? "",
                             ["image_filename"] = imageFilename ?? ""
                         };
-                        // 識別子は cid に統一する（取れなかったときは既存の cid を空で上書きしない）
-                        if (!string.IsNullOrEmpty(productId)) book[ItemIdentity.Key] = productId;
+                        // 識別子は cid（取れなかったときは既存の cid を空で上書きしない）
+                        ItemIdentity.Set(book, productId);
                         allBooks.Add(book);
                     }
                 }
