@@ -16,6 +16,11 @@ namespace dmmCollect
 
         private readonly Dictionary<string, int> _titleIndex = new();
         private readonly Dictionary<string, int> _subtitleIndex = new();
+
+        // books / dojin の照合に使う識別子の索引。サブタイトルだけで照合していた頃は、
+        // サイト側の表記が変わる（「〜」→「～」、改題で「File1」が入る等）と別作品として
+        // 追加され、同じ作品が2件・ファイルも2本になっていた。
+        private readonly Dictionary<string, int> _idIndex = new();
         private readonly Dictionary<string, List<JsonObject>> _exactMatchCache = new();
         private readonly Dictionary<string, List<JsonObject>> _colonRemovedMatchCache = new();
         private readonly Dictionary<string, List<JsonObject>> _flexibleMatchCache = new();
@@ -242,6 +247,7 @@ namespace dmmCollect
         {
             _titleIndex.Clear();
             _subtitleIndex.Clear();
+            _idIndex.Clear();
             _exactMatchCache.Clear();
             _colonRemovedMatchCache.Clear();
             _flexibleMatchCache.Clear();
@@ -292,6 +298,12 @@ namespace dmmCollect
                 {
                     _subtitleIndex[subtitle] = i;
                 }
+
+                string id = ItemIdentity.Of(item);
+                if (id.Length > 0)
+                {
+                    _idIndex.TryAdd(id, i);      // 重複があれば先頭を正とする
+                }
             }
         }
 
@@ -334,7 +346,10 @@ namespace dmmCollect
 
             if (isBook)
             {
-                entry = FindBookEntry(title);
+                // 識別子があれば先に識別子で照合する。見つからなければ従来どおりサブタイトルで照合する。
+                string id = ItemIdentity.Of(newData);
+                entry = id.Length > 0 && _idIndex.TryGetValue(id, out int idIndex) ? Data[idIndex] : null;
+                entry ??= FindBookEntry(title);
                 indexMap = _subtitleIndex;
                 key = title;
             }
@@ -366,6 +381,10 @@ namespace dmmCollect
                 {
                     Data.Add(clone);
                     indexMap[key] = Data.Count - 1;
+
+                    string newId = ItemIdentity.Of(clone);
+                    if (newId.Length > 0) _idIndex.TryAdd(newId, Data.Count - 1);
+
                     updated = true;
                 }
             }

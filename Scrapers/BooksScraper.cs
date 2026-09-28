@@ -391,7 +391,7 @@ namespace dmmCollect.Scrapers
                             string? imageFilename = await DownloadBookImageAsync(seriesLoc, seriesTitle, imageDir);
                             var (downloadUrl, productId) = await GetBookDownloadInfoAsync(seriesLoc);
 
-                            standaloneBooks.Add(new Dictionary<string, object>
+                            var book = new Dictionary<string, object>
                             {
                                 ["series_title"] = seriesTitle,
                                 ["subtitle"] = seriesTitle,
@@ -400,7 +400,10 @@ namespace dmmCollect.Scrapers
                                 ["download_url"] = downloadUrl ?? "",
                                 ["product_id"] = productId ?? "",
                                 ["image_filename"] = imageFilename ?? ""
-                            });
+                            };
+                            // 識別子は cid に統一する（取れなかったときは既存の cid を空で上書きしない）
+                            if (!string.IsNullOrEmpty(productId)) book[ItemIdentity.Key] = productId;
+                            standaloneBooks.Add(book);
                         }
                     }
                     catch (Exception ex)
@@ -452,7 +455,7 @@ namespace dmmCollect.Scrapers
                         var (downloadUrl, productId) = await GetBookDownloadInfoAsync(itemLoc);
                         string? imageFilename = await DownloadBookImageAsync(itemLoc, subtitle, imageDir);
 
-                        allBooks.Add(new JsonObject
+                        var book = new JsonObject
                         {
                             ["series_title"] = series["series_title"],
                             ["subtitle"] = subtitle,
@@ -461,7 +464,10 @@ namespace dmmCollect.Scrapers
                             ["download_url"] = downloadUrl ?? "",
                             ["product_id"] = productId ?? "",
                             ["image_filename"] = imageFilename ?? ""
-                        });
+                        };
+                        // 識別子は cid に統一する（取れなかったときは既存の cid を空で上書きしない）
+                        if (!string.IsNullOrEmpty(productId)) book[ItemIdentity.Key] = productId;
+                        allBooks.Add(book);
                     }
                 }
                 catch (Exception ex)

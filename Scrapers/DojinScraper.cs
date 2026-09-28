@@ -113,7 +113,8 @@ namespace dmmCollect.Scrapers
                             var match = ProductIdPattern.Match(href);
                             if (match.Success)
                             {
-                                itemData["product_id"] = match.Groups[1].Value;
+                                // 識別子は cid に統一する。移行期間中は product_id にも同じ値を入れる
+                                ItemIdentity.Set(itemData, match.Groups[1].Value);
                             }
                         }
 
