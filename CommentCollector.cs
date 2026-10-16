@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -54,6 +55,9 @@ namespace dmmCollect
                 var folderByCid = scanner.MapContentFoldersByCid(dataManager);
                 Console.WriteLine($"コンテンツ実体を持つ作品: {folderByCid.Count} 件");
 
+                // 全文検索用の索引。失敗しても収集（comments.json / data.json）は続ける。
+                CommentIndex? commentIndex = OpenIndex(config);
+
                 var targets = new List<(JsonObject entry, string cid, string folder)>();
                 int skipped = 0;
                 foreach (var entry in dataManager.Data)
@@ -103,8 +107,10 @@ namespace dmmCollect
 
                     if (reviews.Comments.Count > 0)
                     {
-                        CommentStore.Save(folder, reviews);
+                        string savedPath = CommentStore.Save(folder, reviews);
                         withComments++;
+                        try { commentIndex?.Upsert(reviews, savedPath); }
+                        catch (Exception ex) { Console.WriteLine($"[WARNING] コメント索引の更新に失敗しました: {ex.Message}"); }
                     }
                     entry[CountKey] = reviews.Comments.Count;
                     entry[CheckedAtKey] = reviews.CollectedAt;
@@ -122,6 +128,7 @@ namespace dmmCollect
                     try { await Task.Delay(DelayBetweenItemsMs, cts.Token); } catch (OperationCanceledException) { }
                 }
 
+                commentIndex?.Dispose();
                 Console.WriteLine($"=== コメント収集を終了: 完了 {done} 件 / コメントあり {withComments} 件 / 失敗 {failed} 件 / 所要 {Format(stopwatch.Elapsed)} ===");
                 return 0;
             }
@@ -129,6 +136,65 @@ namespace dmmCollect
             {
                 Console.CancelKeyPress -= onCancel;
             }
+        }
+
+        private static CommentIndex? OpenIndex(ConfigManager config)
+        {
+            try
+            {
+                return new CommentIndex(config.BaseDirectory);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[WARNING] コメント索引を開けません（収集は続行します）: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 実体フォルダの comments.json をすべて走査して全文検索索引へ取り込む。
+        /// 索引済みで内容が変わっていないもの（更新日時・サイズ一致）はスキップするので、何度実行してもよい。
+        /// </summary>
+        public static int BuildIndex(ConfigManager config, DataManager dataManager)
+        {
+            Console.WriteLine("=== コメント索引の作成 ===");
+            var scanner = new DirectoryScanner(config.BaseDirectory, config.TargetRoots);
+            var folderByCid = scanner.MapContentFoldersByCid(dataManager);
+
+            using var index = new CommentIndex(config.BaseDirectory);
+            int total = 0, indexed = 0, upToDate = 0, failed = 0;
+            var stopwatch = Stopwatch.StartNew();
+
+            foreach (var (cid, folder) in folderByCid)
+            {
+                string path = Path.Combine(folder, CommentStore.FileName);
+                if (!File.Exists(path)) continue;
+                total++;
+
+                try
+                {
+                    if (index.IsUpToDate(cid, path)) { upToDate++; continue; }
+
+                    var collection = JsonSerializer.Deserialize<ReviewCollection>(File.ReadAllText(path));
+                    if (collection == null) { failed++; continue; }
+                    collection.Cid = cid;
+                    index.Upsert(collection, path);
+                    indexed++;
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    Console.WriteLine($"[WARNING] 索引に取り込めません: {path} ({ex.Message})");
+                }
+
+                if ((indexed + upToDate + failed) % 200 == 0)
+                {
+                    Console.WriteLine($"  {indexed + upToDate + failed} 件処理 (取り込み {indexed} / 最新のためスキップ {upToDate} / 失敗 {failed})");
+                }
+            }
+
+            Console.WriteLine($"=== 索引作成を終了: comments.json {total} 件 / 取り込み {indexed} / スキップ {upToDate} / 失敗 {failed} / 所要 {Format(stopwatch.Elapsed)} ===");
+            return failed == 0 ? 0 : 1;
         }
 
         private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";

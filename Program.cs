@@ -30,6 +30,7 @@ namespace dmmCollect
             string? commentsCid = null;
             bool commentsOnly = false;
             bool recheckComments = false;
+            bool buildCommentIndex = false;
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -80,6 +81,10 @@ namespace dmmCollect
                 {
                     commentsOnly = true;
                 }
+                else if (args[i] == "--build-comment-index")
+                {
+                    buildCommentIndex = true;
+                }
                 else if (args[i] == "--recheck-comments")
                 {
                     recheckComments = true;
@@ -119,6 +124,17 @@ namespace dmmCollect
             Console.WriteLine($"DataPath: {dataPath}");
 
             var dataManager = new DataManager(dataPath, backupOnInit: true, performerAliasesPath: config.PerformerAliasesPath);
+
+            // === コメント索引（全文検索用 SQLite）の作成のみ ===
+            if (buildCommentIndex)
+            {
+                if (mode != "video")
+                {
+                    Console.WriteLine("[FATAL] コメント索引は video モードでのみ使用できます。");
+                    return 1;
+                }
+                return CommentCollector.BuildIndex(config, dataManager);
+            }
 
             // === コメント収集のみ（--comments-only / --comments-cid）===
             if (commentsOnly || commentsCid != null)
@@ -679,6 +695,8 @@ namespace dmmCollect
             Console.WriteLine("                          1作品ごとに comments.json（実体フォルダ）と data.json を保存するため、");
             Console.WriteLine("                          停止しても再実行で続きから再開します。Ctrl+C か BaseDirectory に");
             Console.WriteLine("                          stop_comments.txt を置くと作品の切れ目で停止します。");
+            Console.WriteLine("  --build-comment-index   実体フォルダの comments.json から全文検索用の SQLite 索引（BaseDirectory\\comments.sqlite）を");
+            Console.WriteLine("                          作成/更新して終了します。収集時にも1作品ごとに自動更新されます。");
             Console.WriteLine("  --recheck-comments      確認済みの作品もコメントを再収集します（更新確認用）。");
             Console.WriteLine("  --comments-cid <cid>    指定した作品1件だけコメントを収集して終了します（確認済みでも収集）。");
             Console.WriteLine("  -h, --help              このヘルプメッセージを表示して終了します。");
