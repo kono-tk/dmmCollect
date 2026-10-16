@@ -16,7 +16,9 @@ namespace dmmCollect
     ///
     /// ・1作品ごとに comments.json と data.json を書き込むため、途中で止まっても再実行で続きから進む。
     ///   確認済みの作品には data.json に comments_checked_at を記録し、通常は再確認しない
-    ///   （コメントが0件だった作品も確認済みとして扱う）。
+    ///   （コメントが0件だった作品も確認済みとして扱う）。あわせて公式の平均評価・評価数
+    ///   （rating_average / rating_count）も data.json に記録する。これらが未記録の作品は、
+    ///   確認済みでも一度だけ再取得する。
     /// ・recheck=true なら確認済みの作品も再収集する（コメントの更新用）。
     /// ・停止は Ctrl+C か、BaseDirectory に stop_comments.txt を置く。どちらも作品の切れ目で止まる。
     /// </summary>
@@ -25,6 +27,8 @@ namespace dmmCollect
         public const string StopFileName = "stop_comments.txt";
         private const string CheckedAtKey = "comments_checked_at";
         private const string CountKey = "comment_count";
+        private const string RatingAverageKey = "rating_average";
+        private const string RatingCountKey = "rating_count";
         private const int DelayBetweenItemsMs = 1000;
 
         public static async Task<int> RunAsync(VideoScraper scraper, ConfigManager config, DataManager dataManager, string? onlyCid, bool recheck)
@@ -65,7 +69,7 @@ namespace dmmCollect
                     string cid = ItemIdentity.Of(entry);
                     if (cid.Length == 0 || !folderByCid.TryGetValue(cid, out var folder)) continue;
                     if (onlyCid != null && cid != onlyCid) continue;
-                    if (!recheck && onlyCid == null && entry[CheckedAtKey] != null)
+                    if (!recheck && onlyCid == null && entry[CheckedAtKey] != null && entry[RatingCountKey] != null)
                     {
                         skipped++;
                         continue;
@@ -114,6 +118,7 @@ namespace dmmCollect
                     }
                     entry[CountKey] = reviews.Comments.Count;
                     entry[CheckedAtKey] = reviews.CollectedAt;
+                    SetRating(entry, reviews);
                     if (!dataManager.SaveData(createBackup: false))
                     {
                         Console.WriteLine("[FATAL] data.json の保存に失敗したため中断します。");
@@ -136,6 +141,14 @@ namespace dmmCollect
             {
                 Console.CancelKeyPress -= onCancel;
             }
+        }
+
+        /// <summary>公式の平均評価と評価数を data.json のエントリへ書く。評価が無い作品は平均を持たない。</summary>
+        private static void SetRating(JsonObject entry, ReviewCollection reviews)
+        {
+            entry[RatingCountKey] = reviews.RatingCount;
+            if (reviews.AverageRating.HasValue) entry[RatingAverageKey] = reviews.AverageRating.Value;
+            else entry.Remove(RatingAverageKey);
         }
 
         private static CommentIndex? OpenIndex(ConfigManager config)
@@ -162,7 +175,13 @@ namespace dmmCollect
             var folderByCid = scanner.MapContentFoldersByCid(dataManager);
 
             using var index = new CommentIndex(config.BaseDirectory);
-            int total = 0, indexed = 0, upToDate = 0, failed = 0;
+            var entryByCid = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+            foreach (var e in dataManager.Data)
+            {
+                string id = ItemIdentity.Of(e);
+                if (id.Length > 0) entryByCid.TryAdd(id, e);
+            }
+            int total = 0, indexed = 0, upToDate = 0, failed = 0, ratingsFilled = 0;
             var stopwatch = Stopwatch.StartNew();
 
             foreach (var (cid, folder) in folderByCid)
@@ -173,13 +192,29 @@ namespace dmmCollect
 
                 try
                 {
-                    if (index.IsUpToDate(cid, path)) { upToDate++; continue; }
+                    // 評価値が data.json に無い作品は、comments.json の集計値から補完する（再取得は不要）
+                    bool needsRating = entryByCid.TryGetValue(cid, out var entry) && entry[RatingCountKey] == null;
+                    bool needsIndex = !index.IsUpToDate(cid, path);
+                    if (!needsRating && !needsIndex) { upToDate++; continue; }
 
                     var collection = JsonSerializer.Deserialize<ReviewCollection>(File.ReadAllText(path));
                     if (collection == null) { failed++; continue; }
                     collection.Cid = cid;
-                    index.Upsert(collection, path);
-                    indexed++;
+
+                    if (needsRating)
+                    {
+                        SetRating(entry!, collection);
+                        ratingsFilled++;
+                    }
+                    if (needsIndex)
+                    {
+                        index.Upsert(collection, path);
+                        indexed++;
+                    }
+                    else
+                    {
+                        upToDate++;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -193,7 +228,13 @@ namespace dmmCollect
                 }
             }
 
-            Console.WriteLine($"=== 索引作成を終了: comments.json {total} 件 / 取り込み {indexed} / スキップ {upToDate} / 失敗 {failed} / 所要 {Format(stopwatch.Elapsed)} ===");
+            if (ratingsFilled > 0 && !dataManager.SaveData(createBackup: false))
+            {
+                Console.WriteLine("[FATAL] data.json の保存に失敗しました。");
+                return 1;
+            }
+
+            Console.WriteLine($"=== 索引作成を終了: comments.json {total} 件 / 取り込み {indexed} / スキップ {upToDate} / 評価値を data.json に補完 {ratingsFilled} / 失敗 {failed} / 所要 {Format(stopwatch.Elapsed)} ===");
             return failed == 0 ? 0 : 1;
         }
 
