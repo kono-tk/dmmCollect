@@ -231,7 +231,10 @@ namespace dmmCollect
 
                 var options = new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
                 string jsonString = JsonSerializer.Serialize(rootObj, options);
-                File.WriteAllText(DataPath, jsonString);
+                // 途中で止まっても data.json が壊れないよう、一時ファイルへ書いてから置き換える。
+                string tempPath = DataPath + ".tmp";
+                File.WriteAllText(tempPath, jsonString);
+                File.Move(tempPath, DataPath, overwrite: true);
 
                 _lastMTime = File.GetLastWriteTime(DataPath);
                 return true;

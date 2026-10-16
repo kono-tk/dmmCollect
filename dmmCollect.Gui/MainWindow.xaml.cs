@@ -158,6 +158,8 @@ namespace dmmCollect.Gui
             if (ChkSyncOnly.IsChecked == true) args.Add("--sync-only");
             if (ChkRenewLnk.IsChecked == true) args.Add("--renew-lnk");
             if (ChkLostChild.IsChecked == true) args.Add("--lost-child");
+            if (ChkCommentsOnly.IsChecked == true) args.Add("--comments-only");
+            if (ChkRecheckComments.IsChecked == true) args.Add("--recheck-comments");
 
             return args;
         }
@@ -305,6 +307,8 @@ namespace dmmCollect.Gui
             public bool SyncOnly { get; set; }
             public bool RenewLnk { get; set; }
             public bool LostChild { get; set; }
+            public bool CommentsOnly { get; set; }
+            public bool RecheckComments { get; set; }
             public bool AutoScroll { get; set; } = true;
             public string? ExePath { get; set; }
         }
@@ -330,6 +334,8 @@ namespace dmmCollect.Gui
                 ChkSyncOnly.IsChecked = s.SyncOnly;
                 ChkRenewLnk.IsChecked = s.RenewLnk;
                 ChkLostChild.IsChecked = s.LostChild;
+                ChkCommentsOnly.IsChecked = s.CommentsOnly;
+                ChkRecheckComments.IsChecked = s.RecheckComments;
                 ChkAutoScroll.IsChecked = s.AutoScroll;
                 _savedExePath = s.ExePath;
             }
@@ -355,6 +361,8 @@ namespace dmmCollect.Gui
                     SyncOnly = ChkSyncOnly.IsChecked == true,
                     RenewLnk = ChkRenewLnk.IsChecked == true,
                     LostChild = ChkLostChild.IsChecked == true,
+                    CommentsOnly = ChkCommentsOnly.IsChecked == true,
+                    RecheckComments = ChkRecheckComments.IsChecked == true,
                     AutoScroll = ChkAutoScroll.IsChecked == true,
                     ExePath = _savedExePath,
                 };

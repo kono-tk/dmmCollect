@@ -27,6 +27,9 @@ namespace dmmCollect
             int maxPages = 1;
             bool showHelp = false;
             bool syncOnly = false;
+            string? commentsCid = null;
+            bool commentsOnly = false;
+            bool recheckComments = false;
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -73,6 +76,18 @@ namespace dmmCollect
                 {
                     syncOnly = true;
                 }
+                else if (args[i] == "--comments-only")
+                {
+                    commentsOnly = true;
+                }
+                else if (args[i] == "--recheck-comments")
+                {
+                    recheckComments = true;
+                }
+                else if (args[i] == "--comments-cid")
+                {
+                    if (i + 1 < args.Length) commentsCid = args[++i];
+                }
             }
 
             if (showHelp)
@@ -104,6 +119,19 @@ namespace dmmCollect
             Console.WriteLine($"DataPath: {dataPath}");
 
             var dataManager = new DataManager(dataPath, backupOnInit: true, performerAliasesPath: config.PerformerAliasesPath);
+
+            // === コメント収集のみ（--comments-only / --comments-cid）===
+            if (commentsOnly || commentsCid != null)
+            {
+                if (mode != "video")
+                {
+                    Console.WriteLine("[FATAL] コメント収集は video モードでのみ使用できます。");
+                    return 1;
+                }
+                await using var commentScraper = new VideoScraper(new Dictionary<string, string>(), headless, 0, config.VideoDownloadDirectory, debug);
+                await commentScraper.InitializeAsync();
+                return await CommentCollector.RunAsync(commentScraper, config, dataManager, commentsCid, recheckComments);
+            }
 
             // === スクレイピング部 (dmmLogin) ===
             if (!syncOnly)
@@ -260,6 +288,9 @@ namespace dmmCollect
 
                         // 関連タグの自動収集
                         await scraper.CollectRelatedTagsBatchAsync(dataManager);
+
+                        // コンテンツ実体を持つ作品のユーザーレビュー収集（確認済みはスキップ。--recheck-comments で再収集）
+                        await CommentCollector.RunAsync(scraper, config, dataManager, null, recheckComments);
                     }
                 }
 
@@ -643,6 +674,13 @@ namespace dmmCollect
             Console.WriteLine();
             Console.WriteLine("【その他】");
             Console.WriteLine("  --sync-only             スクレイピングをスキップし、ショートカットの同期処理のみ実行します。");
+            Console.WriteLine("  --comments-only         コンテンツ実体を持つ作品のユーザーレビュー（コメント）収集だけを実行して終了します。");
+            Console.WriteLine("                          ※ [video] モードのみ。ログイン不要。通常実行でもスクレイピング後に収集します。");
+            Console.WriteLine("                          1作品ごとに comments.json（実体フォルダ）と data.json を保存するため、");
+            Console.WriteLine("                          停止しても再実行で続きから再開します。Ctrl+C か BaseDirectory に");
+            Console.WriteLine("                          stop_comments.txt を置くと作品の切れ目で停止します。");
+            Console.WriteLine("  --recheck-comments      確認済みの作品もコメントを再収集します（更新確認用）。");
+            Console.WriteLine("  --comments-cid <cid>    指定した作品1件だけコメントを収集して終了します（確認済みでも収集）。");
             Console.WriteLine("  -h, --help              このヘルプメッセージを表示して終了します。");
         }
     }

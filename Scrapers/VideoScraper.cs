@@ -14,7 +14,7 @@ using AngleSharp.Dom;
 
 namespace dmmCollect.Scrapers
 {
-    public class VideoScraper : BaseScraper
+    public partial class VideoScraper : BaseScraper
     {
         private static readonly Regex CidFromHrefPattern = new(@"(?:cid|id)=([a-zA-Z0-9_]+)", RegexOptions.Compiled);
         private static readonly Regex CidFromSrcPattern = new(@"/digital/video/([^/]+)/", RegexOptions.Compiled);

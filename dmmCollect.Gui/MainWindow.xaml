@@ -44,7 +44,11 @@
             <CheckBox x:Name="ChkDebug" Content="debug（詳細ログ）" Margin="0,0,16,0" />
             <CheckBox x:Name="ChkSyncOnly" Content="sync-only（同期のみ）" Margin="0,0,16,0" />
             <CheckBox x:Name="ChkRenewLnk" Content="renew-lnk（.lnk再作成）" Margin="0,0,16,0" />
-            <CheckBox x:Name="ChkLostChild" Content="lost-child（孤立検索）" />
+            <CheckBox x:Name="ChkLostChild" Content="lost-child（孤立検索）" Margin="0,0,16,0" />
+            <CheckBox x:Name="ChkCommentsOnly" Content="comments-only（コメント収集のみ）" Margin="0,0,16,0"
+                      ToolTip="コンテンツ実体を持つ作品のユーザーレビューだけを収集します（video モード）。停止しても再実行で続きから再開します。" />
+            <CheckBox x:Name="ChkRecheckComments" Content="recheck-comments（コメント再収集）"
+                      ToolTip="確認済みの作品もコメントを再収集します（更新確認用）。" />
         </WrapPanel>
 
         <!-- 実行 / 停止 -->
