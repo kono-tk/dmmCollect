@@ -30,6 +30,10 @@ namespace dmmCollect
         private readonly Dictionary<int, string> _sanCache = new();
         private readonly Dictionary<int, string?> _sanFirst3Cache = new();
 
+        // UpdateOrAddEntry で作品が増えた・変わった後は、FindItemsForVideo が使う照合用キャッシュが古い。
+        // 次に FindItemsForVideo が呼ばれたときに作り直す（スクレイピング中の更新のたびには作り直さない）。
+        private bool _matchCachesStale;
+
         private static readonly Regex TitlePrefixPattern = new(@"^(HD|8K|HQ|4K|FULLHD|SD|SP|PPV|Blu-ray|BluRay|DVD|\s)+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex HashPattern = new(@"[_\-]?[a-fA-F0-9]{6,32}$", RegexOptions.Compiled);
 
@@ -248,6 +252,7 @@ namespace dmmCollect
 
         private void BuildIndexes()
         {
+            _matchCachesStale = false;
             _titleIndex.Clear();
             _subtitleIndex.Clear();
             _idIndex.Clear();
@@ -392,11 +397,18 @@ namespace dmmCollect
                 }
             }
 
+            if (updated) _matchCachesStale = true;
             return updated;
         }
 
         public List<JsonObject> FindItemsForVideo(string searchKey)
         {
+            // 同じ実行の中で追加・更新された作品（新規ダウンロード分など）も照合できるようにする
+            if (_matchCachesStale)
+            {
+                BuildIndexes();
+            }
+
             if (_exactMatchCache.TryGetValue(searchKey, out var exactMatches))
             {
                 return exactMatches;
