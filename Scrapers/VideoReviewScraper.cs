@@ -18,6 +18,14 @@ namespace dmmCollect.Scrapers
         private const string ContentPageUrlFormat = "https://video.dmm.co.jp/av/content/?id={0}";
         private const string ReviewItemSelector = "#review [data-e2eid=\"review-item\"]";
 
+        /// <summary>
+        /// ネタバレを含むレビューは、本文の代わりにこの注意書きだけが表示され、「レビューを表示する」を
+        /// 押すと全文が出る。展開せずに取ると、注意書きだけがコメントとして保存されてしまう。
+        /// </summary>
+        public const string SpoilerPlaceholder = "※このレビューは作品の内容に関する記述が含まれています。";
+
+        private const string ShowReviewButtonSelector = "button:has-text('レビューを表示する')";
+
         private static readonly Regex AverageRatingPattern = new(@"平均評価\s*([0-9.]+)\s*点", RegexOptions.Compiled);
         private static readonly Regex RatingCountPattern = new(@"総評価数\s*(\d+)", RegexOptions.Compiled);
         private static readonly Regex CommentCountPattern = new(@"[（(]\s*(\d+)\s*件のコメント\s*[）)]", RegexOptions.Compiled);
@@ -85,6 +93,7 @@ namespace dmmCollect.Scrapers
                 int pageNo = 1;
                 while (true)
                 {
+                    await ExpandSpoilerReviewsAsync(page, review);
                     string html = await review.EvaluateAsync<string>("e => e.outerHTML");
                     var document = await parser.ParseDocumentAsync(html);
                     var items = document.QuerySelectorAll("[data-e2eid=\"review-item\"]");
@@ -119,6 +128,26 @@ namespace dmmCollect.Scrapers
                 Console.WriteLine($"[WARNING] レビュー取得エラー (URL: {url}): {ex.Message}");
                 return null;
             }
+        }
+
+        /// <summary>
+        /// 表示中のページにある、折りたたまれたネタバレレビューをすべて展開する。
+        /// 展開すると同じ本文の領域に全文が入り、ボタンは「閉じる」に変わる（再クリックの心配はない）。
+        /// </summary>
+        private static async Task ExpandSpoilerReviewsAsync(IPage page, ILocator review)
+        {
+            var buttons = review.Locator(ShowReviewButtonSelector);
+            if (await buttons.CountAsync() == 0) return;
+
+            await buttons.EvaluateAllAsync<object?>("els => { els.forEach(e => e.click()); return null; }");
+
+            // 展開されるまで待つ（通常は一瞬）。残ったら警告して先へ進む。
+            for (int i = 0; i < 20; i++)
+            {
+                await page.WaitForTimeoutAsync(250);
+                if (!(await review.InnerTextAsync()).Contains("このレビューは作品の内容に関する記述が含まれています")) return;
+            }
+            Console.WriteLine("[WARNING] ネタバレレビューを展開できませんでした（注意書きのまま保存されます）。");
         }
 
         private static void ParseSummary(string text, ReviewCollection result)

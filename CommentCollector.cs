@@ -63,6 +63,13 @@ namespace dmmCollect
                 // 全文検索用の索引。失敗しても収集（comments.json / data.json）は続ける。
                 CommentIndex? commentIndex = OpenIndex(config);
 
+                // 展開せずに収集した古いデータ（ネタバレレビューが注意書きだけ）を持つ作品は、確認済みでも取り直す
+                var collapsed = commentIndex?.FindCidsWithCollapsedSpoilers(VideoScraper.SpoilerPlaceholder) ?? new HashSet<string>();
+                if (collapsed.Count > 0)
+                {
+                    Console.WriteLine($"ネタバレレビューの全文が未取得の作品: {collapsed.Count} 件（確認済みでも取り直します）");
+                }
+
                 var targets = new List<(JsonObject entry, string cid, string folder)>();
                 int skipped = 0;
                 foreach (var entry in dataManager.Data)
@@ -70,7 +77,8 @@ namespace dmmCollect
                     string cid = ItemIdentity.Of(entry);
                     if (cid.Length == 0 || !folderByCid.TryGetValue(cid, out var folder)) continue;
                     if (onlyCid != null && cid != onlyCid) continue;
-                    if (!recheck && onlyCid == null && entry[CheckedAtKey] != null && entry[RatingCountKey] != null)
+                    if (!recheck && onlyCid == null && entry[CheckedAtKey] != null && entry[RatingCountKey] != null
+                        && !collapsed.Contains(cid))
                     {
                         skipped++;
                         continue;

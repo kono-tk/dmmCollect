@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Microsoft.Data.Sqlite;
 
@@ -72,6 +73,21 @@ namespace dmmCollect
             return reader.Read()
                 && reader.GetInt64(0) == info.LastWriteTimeUtc.Ticks
                 && reader.GetInt64(1) == info.Length;
+        }
+
+        /// <summary>
+        /// 本文が「ネタバレの注意書きだけ」で保存されているコメントを持つ作品の cid。
+        /// 展開せずに収集した古いデータ（確認済みでも全文を取り直す必要がある作品）を見つけるのに使う。
+        /// </summary>
+        public HashSet<string> FindCidsWithCollapsedSpoilers(string placeholder)
+        {
+            var cids = new HashSet<string>(StringComparer.Ordinal);
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = "SELECT DISTINCT cid FROM comments WHERE body = @placeholder";
+            cmd.Parameters.AddWithValue("@placeholder", placeholder);
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read()) cids.Add(reader.GetString(0));
+            return cids;
         }
 
         /// <summary>1作品分のコメントを入れ替える（古い行は削除）。作品単位でトランザクションを張る。</summary>
