@@ -161,6 +161,8 @@ namespace dmmCollect.Gui
             if (ChkCommentsOnly.IsChecked == true) args.Add("--comments-only");
             if (ChkRecheckComments.IsChecked == true) args.Add("--recheck-comments");
             if (ChkBuildCommentIndex.IsChecked == true) args.Add("--build-comment-index");
+            if (ChkAnalyzeComments.IsChecked == true) args.Add("--analyze-comments");
+            if (ChkVerifyLlm.IsChecked == true) args.Add("--verify-llm");
 
             return args;
         }
@@ -311,6 +313,8 @@ namespace dmmCollect.Gui
             public bool CommentsOnly { get; set; }
             public bool RecheckComments { get; set; }
             public bool BuildCommentIndex { get; set; }
+            public bool AnalyzeComments { get; set; }
+            public bool VerifyLlm { get; set; }
             public bool AutoScroll { get; set; } = true;
             public string? ExePath { get; set; }
         }
@@ -339,6 +343,8 @@ namespace dmmCollect.Gui
                 ChkCommentsOnly.IsChecked = s.CommentsOnly;
                 ChkRecheckComments.IsChecked = s.RecheckComments;
                 ChkBuildCommentIndex.IsChecked = s.BuildCommentIndex;
+                ChkAnalyzeComments.IsChecked = s.AnalyzeComments;
+                ChkVerifyLlm.IsChecked = s.VerifyLlm;
                 ChkAutoScroll.IsChecked = s.AutoScroll;
                 _savedExePath = s.ExePath;
             }
@@ -367,6 +373,8 @@ namespace dmmCollect.Gui
                     CommentsOnly = ChkCommentsOnly.IsChecked == true,
                     RecheckComments = ChkRecheckComments.IsChecked == true,
                     BuildCommentIndex = ChkBuildCommentIndex.IsChecked == true,
+                    AnalyzeComments = ChkAnalyzeComments.IsChecked == true,
+                    VerifyLlm = ChkVerifyLlm.IsChecked == true,
                     AutoScroll = ChkAutoScroll.IsChecked == true,
                     ExePath = _savedExePath,
                 };

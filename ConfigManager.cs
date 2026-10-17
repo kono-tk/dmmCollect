@@ -57,8 +57,17 @@ namespace dmmCollect
         public LoginUrlsConfig urls { get; set; } = new();
     }
 
+    /// <summary>ローカル LLM（ollama）の設定。dmmWin の llm セクションと同じ項目のうち、使うものだけ。</summary>
+    public class LlmConfig
+    {
+        public string endpoint { get; set; } = "http://localhost:11434";
+        public string model { get; set; } = "gemma4:latest";
+        public int timeout_seconds { get; set; } = 180;
+    }
+
     public class DmmConfig
     {
+        public LlmConfig llm { get; set; } = new();
         public string active_audio_target_key { get; set; } = "dmm_game_player";
         public LoginConfig login { get; set; } = new();
         public ModeConfig common { get; set; } = new();

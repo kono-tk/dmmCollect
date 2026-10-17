@@ -31,6 +31,10 @@ namespace dmmCollect
             bool commentsOnly = false;
             bool recheckComments = false;
             bool buildCommentIndex = false;
+            bool analyzeComments = false;
+            bool dryRun = false;
+            bool verifyLlm = false;
+            string? dumpAspects = null;
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -81,6 +85,22 @@ namespace dmmCollect
                 {
                     commentsOnly = true;
                 }
+                else if (args[i] == "--analyze-comments")
+                {
+                    analyzeComments = true;
+                }
+                else if (args[i] == "--dump-aspects")
+                {
+                    if (i + 1 < args.Length) dumpAspects = args[++i];
+                }
+                else if (args[i] == "--verify-llm")
+                {
+                    verifyLlm = true;
+                }
+                else if (args[i] == "--dry-run")
+                {
+                    dryRun = true;
+                }
                 else if (args[i] == "--build-comment-index")
                 {
                     buildCommentIndex = true;
@@ -124,6 +144,17 @@ namespace dmmCollect
             Console.WriteLine($"DataPath: {dataPath}");
 
             var dataManager = new DataManager(dataPath, backupOnInit: true, performerAliasesPath: config.PerformerAliasesPath);
+
+            // === コメント解析（観点の評判・星と本文の食い違い）のみ ===
+            if (analyzeComments)
+            {
+                if (mode != "video")
+                {
+                    Console.WriteLine("[FATAL] コメント解析は video モードでのみ使用できます。");
+                    return 1;
+                }
+                return CommentCollector.AnalyzeAll(config, dataManager, dryRun, verifyLlm, dumpAspects);
+            }
 
             // === コメント索引（全文検索用 SQLite）の作成のみ ===
             if (buildCommentIndex)
@@ -697,6 +728,11 @@ namespace dmmCollect
             Console.WriteLine("                          stop_comments.txt を置くと作品の切れ目で停止します。");
             Console.WriteLine("  --build-comment-index   実体フォルダの comments.json から全文検索用の SQLite 索引（BaseDirectory\\comments.sqlite）を");
             Console.WriteLine("                          作成/更新して終了します。収集時にも1作品ごとに自動更新されます。");
+            Console.WriteLine("  --analyze-comments      コメントから観点の評判（演技が好評など）と、星評価と本文の食い違いを求めて");
+            Console.WriteLine("                          data.json に書き込んで終了します（辞書とルールの解析で数秒）。--dry-run で書き込まずに結果だけ表示。");
+            Console.WriteLine("  --dump-aspects <file>   --analyze-comments と併用（辞書調整用）。観点ごとの極性判定を1行1件の JSON で書き出します。");
+            Console.WriteLine("  --verify-llm            --analyze-comments と併用。食い違いの候補をローカル LLM（ollama）に読ませ、星と逆向きだと確認できたものだけ残します。");
+            Console.WriteLine("                          判定は BaseDirectory\\comment_verdicts.json に保存され、同じ本文は再判定しません（Ctrl+C で止めても続きから再開）。");
             Console.WriteLine("  --recheck-comments      確認済みの作品もコメントを再収集します（更新確認用）。");
             Console.WriteLine("  --comments-cid <cid>    指定した作品1件だけコメントを収集して終了します（確認済みでも収集）。");
             Console.WriteLine("  -h, --help              このヘルプメッセージを表示して終了します。");

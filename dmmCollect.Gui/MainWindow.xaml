@@ -49,6 +49,10 @@
                       ToolTip="コンテンツ実体を持つ作品のユーザーレビューだけを収集します（video モード）。停止しても再実行で続きから再開します。" />
             <CheckBox x:Name="ChkBuildCommentIndex" Content="build-comment-index（検索索引の作成）" Margin="0,0,16,0"
                       ToolTip="comments.json からコメント全文検索用の索引（comments.sqlite）を作成/更新して終了します。" />
+            <CheckBox x:Name="ChkAnalyzeComments" Content="analyze-comments（コメント解析）" Margin="0,0,16,0"
+                      ToolTip="コメントから観点の評判（演技が好評など）と、星評価と本文の食い違いを求めて data.json に書き込みます（数秒）。" />
+            <CheckBox x:Name="ChkVerifyLlm" Content="verify-llm（食い違いをLLMで確認）" Margin="0,0,16,0"
+                      ToolTip="analyze-comments と併用。食い違いの候補をローカルLLM（ollama）で確認して絞り込みます。" />
             <CheckBox x:Name="ChkRecheckComments" Content="recheck-comments（コメント再収集）"
                       ToolTip="確認済みの作品もコメントを再収集します（更新確認用）。" />
         </WrapPanel>
