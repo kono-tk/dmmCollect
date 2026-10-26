@@ -174,15 +174,8 @@ namespace dmmCollect
         /// </summary>
         private static Dictionary<string, string> LoadWorkFolders(ConfigManager config, DataManager dataManager)
         {
-            string indexPath = ContentIndex.PathFor(config.BaseDirectory);
-            var index = ContentIndex.Build(config.TargetRoots, ContentIndex.Load(indexPath), out var stats, Console.WriteLine);
-            index.Save(indexPath);
-            Console.WriteLine($"コンテンツ索引を更新しました（実体フォルダ {stats.Folders} 件 / .dcv 読み込み {stats.FilesRead} 件）");
-            if (stats.UnavailableRoots.Count > 0)
-            {
-                Console.WriteLine($"[WARNING] 見つからないフォルダ（前回の情報を引き継ぎ）: {string.Join(", ", stats.UnavailableRoots)}");
-            }
-            return index.WorkFolderByCid(CommentStore.FileName, ContentIndexCommand.CidForFolderName(dataManager));
+            var index = ContentIndexCommand.Update(config);
+            return index.WorkFolderByCid(CommentStore.FileName, ContentIndex.CidForFolderName(dataManager.Data));
         }
 
         private static CommentIndex? OpenIndex(ConfigManager config)

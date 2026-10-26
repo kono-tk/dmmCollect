@@ -36,27 +36,26 @@ namespace dmmCollect
         }
 
         /// <summary>
-        /// フォルダ名 → フォルダ名と作品名（ファイル名用に整えたもの）が一致する data.json の作品の cid。
-        /// 同じ作品名が複数ある場合は決められないので null（ContentIndex.FoldersByWork の福袋の中身の判定に使う）。
+        /// 索引を差分更新して保存する（変わっていない .dcv は読み直さないので数秒で終わる）。
+        /// 収集の最後とコメント収集の前に呼ぶ。dmmWin は索引ファイルの更新を見て一覧を作り直す。
         /// </summary>
-        public static Func<string, string?> CidForFolderName(DataManager dataManager)
+        public static ContentIndex Update(ConfigManager config)
         {
-            var byTitle = new Dictionary<string, string?>(StringComparer.Ordinal);
-            foreach (var e in dataManager.Data)
+            string indexPath = ContentIndex.PathFor(config.BaseDirectory);
+            var index = ContentIndex.Build(config.TargetRoots, ContentIndex.Load(indexPath), out var stats, Console.WriteLine);
+            index.Save(indexPath);
+            Console.WriteLine($"コンテンツ索引を更新しました（実体フォルダ {stats.Folders} 件 / .dcv 読み込み {stats.FilesRead} 件）");
+            if (stats.UnavailableRoots.Count > 0)
             {
-                string cid = ItemIdentity.Of(e);
-                string title = e["title"]?.ToString() ?? "";
-                if (cid.Length == 0 || title.Length == 0) continue;
-                string key = FileSanitizer.SanitizeFilename(title);
-                byTitle[key] = byTitle.TryGetValue(key, out var existing) && !string.Equals(existing, cid, StringComparison.OrdinalIgnoreCase) ? null : cid;
+                Console.WriteLine($"[WARNING] 見つからないフォルダ（前回の情報を引き継ぎ）: {string.Join(", ", stats.UnavailableRoots)}");
             }
-            return name => byTitle.TryGetValue(name, out var cid) ? cid : null;
+            return index;
         }
 
         private static void Report(ContentIndex index, ConfigManager config, DataManager dataManager)
         {
             var dataCids = new HashSet<string>(dataManager.Data.Select(e => ItemIdentity.Of(e)).Where(c => c.Length > 0), StringComparer.OrdinalIgnoreCase);
-            var byCid = index.FoldersByWork(CidForFolderName(dataManager));
+            var byCid = index.FoldersByWork(ContentIndex.CidForFolderName(dataManager.Data));
 
             Console.WriteLine("\n--- 索引の内容 ---");
             Console.WriteLine($"cid を読めなかったフォルダ: {index.Folders.Count(f => f.Cid == null)}");

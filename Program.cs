@@ -288,6 +288,17 @@ namespace dmmCollect
             // video モードのみ .dcv リンク同期処理を行う
             if (mode == "video")
             {
+                // コンテンツ索引（.dcv の cid → 実体フォルダ）。dmmWin の一覧はこれから作る。
+                Console.WriteLine("=== コンテンツ索引を更新します ===");
+                try
+                {
+                    ContentIndexCommand.Update(config);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ERROR] コンテンツ索引の更新に失敗しました: {ex.Message}");
+                }
+
                 Console.WriteLine("=== ショートカット同期処理を開始します ===");
                 try
                 {

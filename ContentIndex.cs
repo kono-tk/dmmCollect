@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
@@ -136,6 +137,24 @@ namespace dmmCollect
                 list.Add(folder);
             }
             return map;
+        }
+
+        /// <summary>
+        /// フォルダ名 → フォルダ名と作品名（ファイル名用に整えたもの）が一致する data.json の作品の cid。
+        /// 同じ作品名が複数ある場合は決められないので null（FoldersByWork の福袋の中身の判定に使う）。
+        /// </summary>
+        public static Func<string, string?> CidForFolderName(IEnumerable<JsonObject> data)
+        {
+            var byTitle = new Dictionary<string, string?>(StringComparer.Ordinal);
+            foreach (var e in data)
+            {
+                string cid = ItemIdentity.Of(e);
+                string title = e["title"]?.ToString() ?? "";
+                if (cid.Length == 0 || title.Length == 0) continue;
+                string key = FileSanitizer.SanitizeFilename(title);
+                byTitle[key] = byTitle.TryGetValue(key, out var existing) && !string.Equals(existing, cid, StringComparison.OrdinalIgnoreCase) ? null : cid;
+            }
+            return name => byTitle.TryGetValue(name, out var cid) ? cid : null;
         }
 
         /// <summary>
