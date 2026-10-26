@@ -136,16 +136,6 @@ namespace dmmCollect.Gui
             args.Add("--mode");
             args.Add(mode);
 
-            string kw = KeywordBox.Text.Trim();
-            if (!string.IsNullOrEmpty(kw))
-            {
-                args.Add("-k");
-                foreach (var token in kw.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-                {
-                    args.Add(token);
-                }
-            }
-
             string pages = PagesBox.Text.Trim();
             if (!string.IsNullOrEmpty(pages))
             {
@@ -156,8 +146,6 @@ namespace dmmCollect.Gui
             if (ChkHeadful.IsChecked == true) args.Add("--headful");
             if (ChkDebug.IsChecked == true) args.Add("--debug");
             if (ChkSyncOnly.IsChecked == true) args.Add("--sync-only");
-            if (ChkRenewLnk.IsChecked == true) args.Add("--renew-lnk");
-            if (ChkLostChild.IsChecked == true) args.Add("--lost-child");
             if (ChkCommentsOnly.IsChecked == true) args.Add("--comments-only");
             if (ChkRecheckComments.IsChecked == true) args.Add("--recheck-comments");
             if (ChkBuildCommentIndex.IsChecked == true) args.Add("--build-comment-index");
@@ -303,13 +291,10 @@ namespace dmmCollect.Gui
         private class Settings
         {
             public string Mode { get; set; } = "video";
-            public string Keywords { get; set; } = "";
             public string Pages { get; set; } = "1";
             public bool Headful { get; set; }
             public bool Debug { get; set; }
             public bool SyncOnly { get; set; }
-            public bool RenewLnk { get; set; }
-            public bool LostChild { get; set; }
             public bool CommentsOnly { get; set; }
             public bool RecheckComments { get; set; }
             public bool BuildCommentIndex { get; set; }
@@ -333,13 +318,10 @@ namespace dmmCollect.Gui
                 ModeDlsite.IsChecked = s.Mode == "dlsite";
                 if (s.Mode is not ("video" or "books" or "dojin" or "dlsite")) ModeVideo.IsChecked = true;
 
-                KeywordBox.Text = s.Keywords;
                 PagesBox.Text = s.Pages;
                 ChkHeadful.IsChecked = s.Headful;
                 ChkDebug.IsChecked = s.Debug;
                 ChkSyncOnly.IsChecked = s.SyncOnly;
-                ChkRenewLnk.IsChecked = s.RenewLnk;
-                ChkLostChild.IsChecked = s.LostChild;
                 ChkCommentsOnly.IsChecked = s.CommentsOnly;
                 ChkRecheckComments.IsChecked = s.RecheckComments;
                 ChkBuildCommentIndex.IsChecked = s.BuildCommentIndex;
@@ -363,13 +345,10 @@ namespace dmmCollect.Gui
                 var s = new Settings
                 {
                     Mode = mode,
-                    Keywords = KeywordBox.Text,
                     Pages = PagesBox.Text,
                     Headful = ChkHeadful.IsChecked == true,
                     Debug = ChkDebug.IsChecked == true,
                     SyncOnly = ChkSyncOnly.IsChecked == true,
-                    RenewLnk = ChkRenewLnk.IsChecked == true,
-                    LostChild = ChkLostChild.IsChecked == true,
                     CommentsOnly = ChkCommentsOnly.IsChecked == true,
                     RecheckComments = ChkRecheckComments.IsChecked == true,
                     BuildCommentIndex = ChkBuildCommentIndex.IsChecked == true,

@@ -19,9 +19,6 @@ namespace dmmCollect
 
             // 引数の簡易解析
             string mode = "video";
-            var keywords = new List<string>();
-            bool renewLnk = false;
-            bool lostChild = false;
             bool debug = false;
             bool headless = true;
             int maxPages = 1;
@@ -41,21 +38,6 @@ namespace dmmCollect
                 if (args[i] == "-m" || args[i] == "--mode")
                 {
                     if (i + 1 < args.Length) mode = args[++i];
-                }
-                else if (args[i] == "-k" || args[i] == "--keyword")
-                {
-                    while (i + 1 < args.Length && !args[i + 1].StartsWith("-"))
-                    {
-                        keywords.Add(args[++i]);
-                    }
-                }
-                else if (args[i] == "--renew-lnk")
-                {
-                    renewLnk = true;
-                }
-                else if (args[i] == "--lost-child")
-                {
-                    lostChild = true;
                 }
                 else if (args[i] == "--debug")
                 {
@@ -247,88 +229,19 @@ namespace dmmCollect
                         await scraper.LoginAsync(dmmId, dmmPw);
                         await scraper.NavigateAndWaitForVideoLibraryAsync();
                         
-                        // FLATフォルダに全コンテンツ情報のHTMLを保存する処理（フェーズ1）
-                        string flatDir = Path.Combine(baseDir, AppConstants.FLAT_DIR_NAME);
-                        Directory.CreateDirectory(flatDir);
-                        string flatHtmlPath = Path.Combine(flatDir, $"{AppConstants.FLAT_DIR_NAME}.html");
-                        
-                        Console.WriteLine($"=== フェーズ1: FLATフォルダに全コンテンツ情報を保存 ===");
+                        // マイライブラリの全ページを1回巡回し、画像・CID・購入日をまとめて更新する。
+                        // （以前はここで FLAT.html と、タイトルのキーワードごとの検索結果 HTML を保存していたが、
+                        //   キーワードフォルダの廃止に伴い不要になった）
+                        Console.WriteLine("=== マイライブラリの全ページを巡回（画像・CID・購入日） ===");
                         if (await scraper.SearchAndExpandAsync(null))
                         {
-                            // ページネーション化に伴い、FLAT用HTML収集・画像/CID更新・購入日収集を
-                            // 1回の全ページ巡回でまとめて実行する（従来は各処理が個別に全ページを巡回して3周していた）。
-                            string pageContent = await scraper.ProcessAllPagesAsync(imageDir, dataManager);
-
-                            Console.WriteLine($"[SAVE HTML] 全コンテンツ情報をFLATフォルダに保存: {flatHtmlPath}");
-                            try
-                            {
-                                await File.WriteAllTextAsync(flatHtmlPath, pageContent);
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"[ERROR] FLATフォルダへのHTML保存に失敗: {ex.Message}");
-                            }
+                            await scraper.ProcessAllPagesAsync(imageDir, dataManager);
                         }
                         else
                         {
                             Console.WriteLine("[ERROR] 全コンテンツの取得に失敗しました。");
                             return 1;
                         }
-
-                        // キーワード絞り込みとHTML保存処理（フェーズ2）
-                        if (keywords.Count > 0 && keywords[0] == "-")
-                        {
-                            Console.WriteLine("=== フェーズ2: スキップ（keywordsに - が指定されました） ===");
-                        }
-                        else
-                        {
-                            List<string> targetFolders;
-                            var scanner = new DirectoryScanner(baseDir, config.TargetRoots);
-                            if (keywords.Count > 0)
-                            {
-                                Console.WriteLine("=== フェーズ2: 指定キーワードでの絞り込み処理 ===");
-                                targetFolders = scanner.GetTargetFolders(keywords);
-                            }
-                            else
-                            {
-                                Console.WriteLine("=== フェーズ2: 自動フォルダ検出での処理 ===");
-                                targetFolders = scanner.GetTargetFolders(null);
-                            }
-
-                            if (targetFolders.Count == 0)
-                            {
-                                Console.WriteLine("[WARNING] 処理対象のキーワードフォルダが見つかりませんでした。");
-                            }
-                            else
-                            {
-                                Console.WriteLine($"キーワード絞り込み処理を開始します（全{targetFolders.Count}件）。HTML保存のみを実行します。");
-                                foreach (var folderPath in targetFolders)
-                                {
-                                    string keyword = Path.GetFileName(folderPath);
-                                    Console.WriteLine($"\n--- キーワード: {keyword} の処理を開始 ---");
-                                    if (await scraper.SearchAndExpandAsync(keyword))
-                                    {
-                                        string htmlSavePath = Path.Combine(folderPath, $"{keyword}.html");
-                                        Console.WriteLine($"  [SAVE HTML] 検索結果を保存します: {htmlSavePath}");
-                                        try
-                                        {
-                                            // 新レイアウトはページネーション式のため、全ページのグリッドを集約して保存する
-                                            string pageContent = await scraper.CollectSearchResultHtmlAsync();
-                                            await File.WriteAllTextAsync(htmlSavePath, pageContent);
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            Console.WriteLine($"  [ERROR] HTMLの保存に失敗しました: {ex.Message}");
-                                        }
-                                    }
-                                }
-                                Console.WriteLine("キーワード絞り込み処理が完了しました。");
-                            }
-                        }
-
-                        // 元の画面（全表示状態）に戻してから詳細取得等に進むために再度Navigateします
-                        await scraper.NavigateAndWaitForVideoLibraryAsync();
-                        await scraper.SearchAndExpandAsync(null);
 
                         // 不足している詳細情報の自動取得
                         await scraper.UpdateAllDetailsAsync(dataManager, imageDir);
@@ -355,7 +268,7 @@ namespace dmmCollect
                 Console.WriteLine("=== --sync-only 指定のためスクレイピングをスキップします ===");
             }
 
-            // === 同期処理部 (dmmSearch) ===
+            // === 同期処理部（FLAT フォルダのショートカット） ===
             // video モードのみ .dcv リンク同期処理を行う
             if (mode == "video")
             {
@@ -365,18 +278,8 @@ namespace dmmCollect
                     var scanner = new DirectoryScanner(baseDir, config.TargetRoots);
                     var shortcutMgr = new ShortcutManager();
 
-                    if (lostChild)
-                    {
-                        RunLostChildMode(scanner, shortcutMgr, dataManager);
-                    }
-                    else if (keywords.Count == 0 || (keywords.Count > 0 && keywords[0] == "-"))
-                    {
-                        RunFlatMode(scanner, shortcutMgr, dataManager);
-                    }
-                    else
-                    {
-                        RunStandardSearchMode(scanner, shortcutMgr, dataManager, keywords, renewLnk, config.MaxAltLength);
-                    }
+                    // コンテンツ実体（.dcv を含むフォルダ）すべてのショートカットを FLAT に作成/更新する
+                    RunFlatMode(scanner, shortcutMgr, dataManager);
 
                     Console.WriteLine("=== 全ての処理が正常に完了しました ===");
                 }
@@ -394,81 +297,6 @@ namespace dmmCollect
 
 
             return 0;
-        }
-
-        private static void RunStandardSearchMode(DirectoryScanner scanner, ShortcutManager shortcutMgr, DataManager dataManager, List<string> keywords, bool renewLnk, int maxAltLen)
-        {
-            var keywordDirs = scanner.FindKeywordDirs(keywords.Count > 0 ? keywords : null);
-            if (keywordDirs.Count == 0)
-            {
-                Console.WriteLine("[WARNING] 処理対象のキーワードディレクトリが見つかりませんでした。");
-                return;
-            }
-
-            var targetFolders = scanner.FindTargetFolders();
-
-            // data.json からサニタイズ済みタイトルをキーにする日付情報の辞書を作成
-            var dataMap = new Dictionary<string, (string? purchaseDate, bool notfound)>(StringComparer.OrdinalIgnoreCase);
-            foreach (var entry in dataManager.Data)
-            {
-                string? title = entry["title"]?.ToString();
-                if (!string.IsNullOrEmpty(title))
-                {
-                    string sanitizedTitle = FileSanitizer.SanitizeFilename(title);
-                    string? purchaseDate = entry.ContainsKey("purchase_date") ? entry["purchase_date"]?.ToString() : null;
-                    bool notfound = entry.ContainsKey("notfound") && entry["notfound"] != null && entry["notfound"]!.AsValue().TryGetValue(out bool nf) && nf;
-                    
-                    dataMap[sanitizedTitle] = (purchaseDate, notfound);
-                }
-            }
-
-            foreach (var kd in keywordDirs)
-            {
-                Console.WriteLine($"\n--- キーワード '{Path.GetFileName(kd)}' の処理を開始 ---");
-
-                var htmlFile = Path.Combine(kd, $"{Path.GetFileName(kd)}.html");
-                if (File.Exists(htmlFile))
-                {
-                    CreateSearchTxtFromHtml(htmlFile, maxAltLen);
-                }
-
-                string searchTxtPath = Path.Combine(kd, AppConstants.SEARCH_TXT_FILENAME);
-                if (!File.Exists(searchTxtPath))
-                {
-                    Console.WriteLine($"  {AppConstants.SEARCH_TXT_FILENAME} が見つからないため、ショートカット作成をスキップします。");
-                    continue;
-                }
-
-                if (renewLnk)
-                {
-                    Console.WriteLine($"  --renew-lnk 指定のため、'{Path.GetFileName(kd)}' 内の既存 .lnk ファイルを削除します。");
-                    foreach (var file in Directory.GetFiles(kd, "*.lnk"))
-                    {
-                        File.Delete(file);
-                    }
-                }
-
-                var sanitizedKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var line in File.ReadAllLines(searchTxtPath))
-                {
-                    if (!string.IsNullOrWhiteSpace(line))
-                    {
-                        sanitizedKeywords.Add(FileSanitizer.SanitizeFilename(line.Trim()));
-                    }
-                }
-
-                Console.WriteLine($"  {sanitizedKeywords.Count} 件のキーワードを元にリンクを作成/更新します。");
-                foreach (var keyword in sanitizedKeywords)
-                {
-                    foreach (var folder in targetFolders)
-                    {
-                        if (folder.Key.Contains(keyword, StringComparison.OrdinalIgnoreCase))
-                        {
-                            CreateOrUpdateShortcut(kd, folder.Value, shortcutMgr, dataMap);
-                        }
-                    }
-                }
-            }
         }
 
         private static void CreateOrUpdateShortcut(string keywordDir, string targetFolder, ShortcutManager shortcutMgr, Dictionary<string, (string? purchaseDate, bool notfound)> dataMap)
@@ -533,132 +361,6 @@ namespace dmmCollect
             }
         }
 
-        private static void CreateSearchTxtFromHtml(string htmlFile, int maxAltLen)
-        {
-            string searchTxtFile = Path.Combine(Path.GetDirectoryName(htmlFile)!, AppConstants.SEARCH_TXT_FILENAME);
-            if (File.Exists(searchTxtFile) && File.GetLastWriteTime(searchTxtFile) >= File.GetLastWriteTime(htmlFile))
-            {
-                return;
-            }
-
-            Console.WriteLine($"  HTMLを処理中: {Path.GetFileName(htmlFile)}");
-            try
-            {
-                string htmlContent = File.ReadAllText(htmlFile);
-                var parser = new HtmlParser();
-                var document = parser.ParseDocument(htmlContent);
-
-                // 新レイアウトの 'ul.grid li img' と 従来レイアウトの 'span.mySearchList_item_pict img' 両方に対応
-                var imgTags = document.QuerySelectorAll("ul.grid li img[alt], span.mySearchList_item_pict img[alt][src]");
-                var altTexts = new List<string>();
-
-                foreach (var img in imgTags)
-                {
-                    string? alt = img.GetAttribute("alt")?.Trim();
-                    if (!string.IsNullOrEmpty(alt))
-                    {
-                        string subAlt = alt.Substring(0, Math.Min(alt.Length, maxAltLen));
-                        altTexts.Add(FileSanitizer.SanitizeFilename(subAlt));
-                    }
-                }
-
-                File.WriteAllLines(searchTxtFile, altTexts);
-                Console.WriteLine($"  -> {Path.GetFileName(searchTxtFile)} を作成/更新しました ({altTexts.Count}件)。");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"  [ERROR] HTMLのパースに失敗しました ({Path.GetFileName(htmlFile)}): {ex.Message}");
-            }
-        }
-
-        private static void RunLostChildMode(DirectoryScanner scanner, ShortcutManager shortcutMgr, DataManager dataManager)
-        {
-            Console.WriteLine("--- 孤立コンテンツ検索モードを開始 ---");
-            string lostFoundDir = Path.Combine(scanner.BaseDirectory, AppConstants.LOST_FOUND_DIR_NAME);
-            
-            var mainLinkedTargets = scanner.FindAllLinkedTargets(excludeDir: lostFoundDir);
-
-            if (Directory.Exists(lostFoundDir))
-            {
-                Console.WriteLine($"'{AppConstants.LOST_FOUND_DIR_NAME}' 内のクリーンアップを開始します...");
-                int deletedCount = 0;
-
-                Type? shellType = Type.GetTypeFromProgID("WScript.Shell");
-                if (shellType != null)
-                {
-                    dynamic shell = Activator.CreateInstance(shellType)!;
-                    var lnkFiles = Directory.GetFiles(lostFoundDir, "*.lnk");
-
-                    foreach (var lnkPath in lnkFiles)
-                    {
-                        try
-                        {
-                            dynamic shortcut = shell.CreateShortcut(lnkPath);
-                            string targetPath = shortcut.TargetPath;
-
-                            if (!string.IsNullOrEmpty(targetPath) && mainLinkedTargets.Contains(Path.GetFullPath(targetPath)))
-                            {
-                                File.Delete(lnkPath);
-                                Console.WriteLine($"    [DELETE] 不要なリンクを削除: {Path.GetFileName(lnkPath)} (ターゲット: {Path.GetFileName(targetPath)})");
-                                deletedCount++;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"ショートカットの解決/削除に失敗: {lnkPath} ({ex.Message})");
-                        }
-                    }
-                }
-
-                if (deletedCount > 0)
-                {
-                    Console.WriteLine($"{deletedCount} 件の不要なリンクを削除しました。");
-                }
-                else
-                {
-                    Console.WriteLine("削除対象の不要なリンクはありませんでした。");
-                }
-            }
-
-            var allTargetFolders = scanner.FindTargetFolders().Values.Select(Path.GetFullPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            if (allTargetFolders.Count == 0)
-            {
-                Console.WriteLine("[WARNING] 検索対象のフォルダが見見つかりませんでした。");
-                return;
-            }
-
-            Console.WriteLine($"{allTargetFolders.Count} 件のターゲットフォルダをスキャンしました。");
-            
-            var lostChildren = allTargetFolders.Where(f => !mainLinkedTargets.Contains(f)).OrderBy(f => f).ToList();
-            if (lostChildren.Count == 0)
-            {
-                Console.WriteLine("新たに発見された孤立コンテンツはありませんでした。");
-                return;
-            }
-
-            Console.WriteLine($"{lostChildren.Count} 件の孤立したコンテンツを新たに発見しました。");
-            Directory.CreateDirectory(lostFoundDir);
-
-            // data.json から日付辞書を作成
-            var dataMap = new Dictionary<string, (string? purchaseDate, bool notfound)>(StringComparer.OrdinalIgnoreCase);
-            foreach (var entry in dataManager.Data)
-            {
-                string? title = entry["title"]?.ToString();
-                if (!string.IsNullOrEmpty(title))
-                {
-                    string sanitizedTitle = FileSanitizer.SanitizeFilename(title);
-                    string? purchaseDate = entry.ContainsKey("purchase_date") ? entry["purchase_date"]?.ToString() : null;
-                    bool notfound = entry.ContainsKey("notfound") && entry["notfound"] != null && entry["notfound"]!.AsValue().TryGetValue(out bool nf) && nf;
-                    dataMap[sanitizedTitle] = (purchaseDate, notfound);
-                }
-            }
-
-            foreach (var targetFolder in lostChildren)
-            {
-                CreateOrUpdateShortcut(lostFoundDir, targetFolder, shortcutMgr, dataMap);
-            }
-        }
-
         private static void RunFlatMode(DirectoryScanner scanner, ShortcutManager shortcutMgr, DataManager dataManager)
         {
             Console.WriteLine("--- フラットモードを開始 ---");
@@ -709,18 +411,9 @@ namespace dmmCollect
             Console.WriteLine("  --headful               ブラウザを表示モードで起動します。");
             Console.WriteLine("                          ※ 全モードで有効");
             Console.WriteLine();
-            Console.WriteLine("【同期・ショートカット作成用オプション】");
-            Console.WriteLine("  -k, --keyword <word>    処理対象のキーワードを指定します (複数指定可)。");
-            Console.WriteLine("                          ※ [video] モードでのスクレイピング絞り込み、およびショートカット作成時の");
-            Console.WriteLine("                            キーワード選択に使用します。'-' を指定するとフラットモードで実行します。");
-            Console.WriteLine("  --renew-lnk             同期処理時に対象キーワードフォルダ内の既存 .lnk ファイルを削除して再作成します。");
-            Console.WriteLine("                          ※ ショートカット同期処理で有効");
-            Console.WriteLine("  --lost-child            孤立したコンテンツ（どのキーワードフォルダにも紐づかないフォルダ）を検索し、");
-            Console.WriteLine("                          '_lost_found' フォルダにショートカットを作成します。");
-            Console.WriteLine("                          ※ ショートカット同期処理で有効");
-            Console.WriteLine();
             Console.WriteLine("【その他】");
             Console.WriteLine("  --sync-only             スクレイピングをスキップし、ショートカットの同期処理のみ実行します。");
+            Console.WriteLine("                          ※ [video] モード。コンテンツ実体のショートカットを FLAT フォルダに作成/更新します。");
             Console.WriteLine("  --comments-only         コンテンツ実体を持つ作品のユーザーレビュー（コメント）収集だけを実行して終了します。");
             Console.WriteLine("                          ※ [video] モードのみ。ログイン不要。通常実行でもスクレイピング後に収集します。");
             Console.WriteLine("                          1作品ごとに comments.json（実体フォルダ）と data.json を保存するため、");

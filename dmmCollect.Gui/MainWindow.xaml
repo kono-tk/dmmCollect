@@ -22,19 +22,15 @@
             <RadioButton x:Name="ModeDlsite" Content="dlsite" GroupName="Mode" VerticalAlignment="Center" />
         </StackPanel>
 
-        <!-- キーワード / ページ数 -->
+        <!-- ページ数（video のキーワード指定は、キーワードフォルダの廃止に伴い削除した） -->
         <Grid Grid.Row="1" Margin="0,0,0,6">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="70" />
-                <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="60" />
+                <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="キーワード:" VerticalAlignment="Center" />
-            <TextBox x:Name="KeywordBox" Grid.Column="1" VerticalAlignment="Center"
-                     ToolTip="スペース区切りで複数指定。'-' でフラットモード。空欄なら自動検出。" />
-            <TextBlock Grid.Column="2" Text="ページ数(books):" VerticalAlignment="Center" Margin="12,0,4,0" />
-            <TextBox x:Name="PagesBox" Grid.Column="3" Text="1" VerticalAlignment="Center"
+            <TextBlock Grid.Column="0" Text="ページ数(books):" VerticalAlignment="Center" Margin="0,0,4,0" />
+            <TextBox x:Name="PagesBox" Grid.Column="1" Text="1" VerticalAlignment="Center"
                      ToolTip="books モードの最大取得ページ数。0 で全ページ。" />
         </Grid>
 
@@ -43,8 +39,6 @@
             <CheckBox x:Name="ChkHeadful" Content="headful（ブラウザ表示）" Margin="0,0,16,0" />
             <CheckBox x:Name="ChkDebug" Content="debug（詳細ログ）" Margin="0,0,16,0" />
             <CheckBox x:Name="ChkSyncOnly" Content="sync-only（同期のみ）" Margin="0,0,16,0" />
-            <CheckBox x:Name="ChkRenewLnk" Content="renew-lnk（.lnk再作成）" Margin="0,0,16,0" />
-            <CheckBox x:Name="ChkLostChild" Content="lost-child（孤立検索）" Margin="0,0,16,0" />
             <CheckBox x:Name="ChkCommentsOnly" Content="comments-only（コメント収集のみ）" Margin="0,0,16,0"
                       ToolTip="コンテンツ実体を持つ作品のユーザーレビューだけを収集します（video モード）。停止しても再実行で続きから再開します。" />
             <CheckBox x:Name="ChkBuildCommentIndex" Content="build-comment-index（検索索引の作成）" Margin="0,0,16,0"

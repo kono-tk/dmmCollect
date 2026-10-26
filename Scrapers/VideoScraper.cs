@@ -76,7 +76,7 @@ namespace dmmCollect.Scrapers
 
         // キーワードで絞り込み（指定時）、結果の1ページ目を表示した状態にする。
         // 2026-07 の新レイアウトでは「もっと見る」→ ページネーション（?page=N）に変わったため、
-        // 全ページの展開は各処理側が ForEachPageAsync / CollectSearchResultHtmlAsync で行う。
+        // 全ページの展開は各処理側が ForEachPageAsync で行う。
         public async Task<bool> SearchAndExpandAsync(string? keyword = null)
         {
             if (Page == null) throw new InvalidOperationException("Page is not initialized.");
@@ -216,34 +216,6 @@ namespace dmmCollect.Scrapers
         }
 
         // 現在の検索結果（全ページ）のグリッドHTMLを連結して返す。キーワード検索結果の保存に使う。
-        public async Task<string> CollectSearchResultHtmlAsync()
-        {
-            if (Page == null) return "";
-
-            var sb = new System.Text.StringBuilder();
-            sb.Append("<html><body>\n");
-
-            await ForEachPageAsync(async (pageNum, total) =>
-            {
-                string gridHtml = await Page.EvaluateAsync<string>(@"() => {
-                    const grids = Array.from(document.querySelectorAll('ul.grid'));
-                    return grids.map(g => g.outerHTML).join('\n');
-                }");
-                int cnt = await Page.Locator(AppConstants.MY_SEARCH_LIST_ITEM_SELECTOR).CountAsync();
-                Console.WriteLine($"  ページ {pageNum}/{total}: {cnt} 件のアイテムを収集しました。");
-                sb.Append(gridHtml);
-                sb.Append('\n');
-            });
-
-            sb.Append("</body></html>\n");
-            return sb.ToString();
-        }
-
-        // フェーズ1の全処理（FLAT保存用HTML収集・画像/CID更新・購入日収集）を「1回のページ巡回」でまとめて行う。
-        // ページネーション化により各処理を個別に呼ぶと全ページを3周してしまうため、1周に集約する。
-        // ページURLは巡回開始時（1ページ目）に一括算出されるので、個別呼び出しで起きていた
-        // 「最終ページ始点だと総ページ数を1つ少なく誤検出する」取りこぼしも防げる。
-        // 戻り値は FLAT 保存用に集約したグリッドHTML。
         public async Task<string> ProcessAllPagesAsync(string saveDir, DataManager dataManager)
         {
             if (Page == null) return "";
