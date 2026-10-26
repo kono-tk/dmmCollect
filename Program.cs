@@ -284,11 +284,10 @@ namespace dmmCollect
                 Console.WriteLine("=== --sync-only 指定のためスクレイピングをスキップします ===");
             }
 
-            // === 同期処理部（FLAT フォルダのショートカット） ===
-            // video モードのみ .dcv リンク同期処理を行う
+            // === コンテンツ索引（.dcv の cid → 実体フォルダ）の更新。dmmWin の一覧はこれから作る ===
+            // （以前は実体フォルダへのショートカットを FLAT フォルダに作っていたが、索引に置き換えて廃止した）
             if (mode == "video")
             {
-                // コンテンツ索引（.dcv の cid → 実体フォルダ）。dmmWin の一覧はこれから作る。
                 Console.WriteLine("=== コンテンツ索引を更新します ===");
                 try
                 {
@@ -296,131 +295,14 @@ namespace dmmCollect
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[ERROR] コンテンツ索引の更新に失敗しました: {ex.Message}");
-                }
-
-                Console.WriteLine("=== ショートカット同期処理を開始します ===");
-                try
-                {
-                    var scanner = new DirectoryScanner(baseDir, config.TargetRoots);
-                    var shortcutMgr = new ShortcutManager();
-
-                    // コンテンツ実体（.dcv を含むフォルダ）すべてのショートカットを FLAT に作成/更新する
-                    RunFlatMode(scanner, shortcutMgr, dataManager);
-
-                    Console.WriteLine("=== 全ての処理が正常に完了しました ===");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[FATAL] ショートカット同期処理中にエラーが発生しました: {ex.Message}");
+                    Console.WriteLine($"[FATAL] コンテンツ索引の更新に失敗しました: {ex.Message}");
                     return 1;
                 }
             }
-            else
-            {
-                Console.WriteLine($"=== {mode} モードではショートカット同期処理をスキップします ===");
-                Console.WriteLine("=== 全ての処理が正常に完了しました ===");
-            }
+            Console.WriteLine("=== 全ての処理が正常に完了しました ===");
 
 
             return 0;
-        }
-
-        private static void CreateOrUpdateShortcut(string keywordDir, string targetFolder, ShortcutManager shortcutMgr, Dictionary<string, (string? purchaseDate, bool notfound)> dataMap)
-        {
-            string folderName = Path.GetFileName(targetFolder);
-            string linkNameBase = FileSanitizer.SanitizeFilename($"{folderName}_link");
-            string linkPathStr = FileSanitizer.FormatFilename(
-                Path.Combine(keywordDir, $"{linkNameBase}.lnk"),
-                100
-            );
-
-            string sanitizedTitle = FileSanitizer.SanitizeFilename(folderName);
-            // デフォルトのタイムスタンプとして実体フォルダの最終更新日時を使用する（未来の日付になるのを防ぐ）
-            DateTime targetDt = Directory.GetLastWriteTime(targetFolder);
-
-            if (dataMap.TryGetValue(sanitizedTitle, out var entryData))
-            {
-                if (entryData.notfound)
-                {
-                    targetDt = new DateTime(1980, 1, 2);
-                }
-                else if (!string.IsNullOrEmpty(entryData.purchaseDate))
-                {
-                    string[] possibleFormats = new[] { "yyyy年MM月dd日 HH:mm", "yyyy/MM/dd", "yyyy-MM-dd" };
-                    foreach (var fmt in possibleFormats)
-                    {
-                        if (DateTime.TryParseExact(entryData.purchaseDate, fmt, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out DateTime parsedDate))
-                        {
-                            targetDt = parsedDate;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (File.Exists(linkPathStr))
-            {
-                // リンク先が存在するか確認し、リンク切れなら削除して再作成する
-                string? existingTarget = shortcutMgr.GetTargetPath(linkPathStr);
-                if (existingTarget != null && !Directory.Exists(existingTarget))
-                {
-                    Console.WriteLine($"    [RELINK] リンク切れを検出: '{Path.GetFileName(linkPathStr)}' (旧: {existingTarget})");
-                    Console.WriteLine($"             -> 再作成: '{Path.GetFileName(targetFolder)}'");
-                    File.Delete(linkPathStr);
-                    shortcutMgr.CreateShortcut(linkPathStr, targetFolder);
-                    shortcutMgr.SetFileTimestamp(linkPathStr, targetDt);
-                }
-                else
-                {
-                    DateTime currentMTime = File.GetLastWriteTime(linkPathStr);
-                    if (currentMTime != targetDt)
-                    {
-                        Console.WriteLine($"    [UPDATE] タイムスタンプを更新: {Path.GetFileName(linkPathStr)}");
-                        shortcutMgr.SetFileTimestamp(linkPathStr, targetDt);
-                    }
-                }
-            }
-            else
-            {
-                shortcutMgr.CreateShortcut(linkPathStr, targetFolder);
-                shortcutMgr.SetFileTimestamp(linkPathStr, targetDt);
-            }
-        }
-
-        private static void RunFlatMode(DirectoryScanner scanner, ShortcutManager shortcutMgr, DataManager dataManager)
-        {
-            Console.WriteLine("--- フラットモードを開始 ---");
-            var contentFolders = scanner.FindAllDcvParentFolders();
-            if (contentFolders.Count == 0)
-            {
-                Console.WriteLine("[WARNING] ショートカットを作成する対象のコンテンツフォルダが見つかりませんでした。");
-                return;
-            }
-
-            string flatDir = Path.Combine(scanner.BaseDirectory, AppConstants.FLAT_DIR_NAME);
-            Directory.CreateDirectory(flatDir);
-            Console.WriteLine($"'{AppConstants.FLAT_DIR_NAME}' にショートカットを作成/更新します...");
-
-            // data.json からサニタイズ済みタイトルをキーにする日付情報の辞書を作成
-            var dataMap = new Dictionary<string, (string? purchaseDate, bool notfound)>(StringComparer.OrdinalIgnoreCase);
-            foreach (var entry in dataManager.Data)
-            {
-                string? title = entry["title"]?.ToString();
-                if (!string.IsNullOrEmpty(title))
-                {
-                    string sanitizedTitle = FileSanitizer.SanitizeFilename(title);
-                    string? purchaseDate = entry.ContainsKey("purchase_date") ? entry["purchase_date"]?.ToString() : null;
-                    bool notfound = entry.ContainsKey("notfound") && entry["notfound"] != null && entry["notfound"]!.AsValue().TryGetValue(out bool nf) && nf;
-                    
-                    dataMap[sanitizedTitle] = (purchaseDate, notfound);
-                }
-            }
-
-            foreach (var targetFolder in contentFolders)
-            {
-                CreateOrUpdateShortcut(flatDir, targetFolder, shortcutMgr, dataMap);
-            }
         }
 
         private static void ShowHelp()
@@ -439,8 +321,8 @@ namespace dmmCollect
             Console.WriteLine("                          ※ 全モードで有効");
             Console.WriteLine();
             Console.WriteLine("【その他】");
-            Console.WriteLine("  --sync-only             スクレイピングをスキップし、ショートカットの同期処理のみ実行します。");
-            Console.WriteLine("                          ※ [video] モード。コンテンツ実体のショートカットを FLAT フォルダに作成/更新します。");
+            Console.WriteLine("  --sync-only             スクレイピングをスキップし、コンテンツ索引の更新だけを実行します。");
+            Console.WriteLine("                          ※ [video] モード。BaseDirectory\\content_index.json（cid → 実体フォルダ）を差分更新します。");
             Console.WriteLine("  --comments-only         コンテンツ実体を持つ作品のユーザーレビュー（コメント）収集だけを実行して終了します。");
             Console.WriteLine("                          ※ [video] モードのみ。ログイン不要。通常実行でもスクレイピング後に収集します。");
             Console.WriteLine("                          1作品ごとに comments.json（実体フォルダ）と data.json を保存するため、");
@@ -449,7 +331,8 @@ namespace dmmCollect
             Console.WriteLine("  --build-comment-index   実体フォルダの comments.json から全文検索用の SQLite 索引（BaseDirectory\\comments.sqlite）を");
             Console.WriteLine("                          作成/更新して終了します。収集時にも1作品ごとに自動更新されます。");
             Console.WriteLine("  --build-content-index   コンテンツ索引（BaseDirectory\\content_index.json。cid → 実体フォルダ）を作成/更新し、");
-            Console.WriteLine("                          現行のタイトル照合との差分を表示して終了します。2回目以降は変わった .dcv だけを読みます。");
+            Console.WriteLine("                          索引の内容（data.json に無い実体、複数フォルダの作品など）を表示して終了します。");
+            Console.WriteLine("                          2回目以降は変わった .dcv だけを読みます。");
             Console.WriteLine("  --analyze-comments      コメントから観点の評判（演技が好評など）と、星評価と本文の食い違いを求めて");
             Console.WriteLine("                          data.json に書き込んで終了します（辞書とルールの解析で数秒）。--dry-run で書き込まずに結果だけ表示。");
             Console.WriteLine("  --dump-aspects <file>   --analyze-comments と併用（辞書調整用）。観点ごとの極性判定を1行1件の JSON で書き出します。");

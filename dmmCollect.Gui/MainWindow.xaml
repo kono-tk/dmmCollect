@@ -38,7 +38,7 @@
         <WrapPanel Grid.Row="2" Margin="70,0,0,8">
             <CheckBox x:Name="ChkHeadful" Content="headful（ブラウザ表示）" Margin="0,0,16,0" />
             <CheckBox x:Name="ChkDebug" Content="debug（詳細ログ）" Margin="0,0,16,0" />
-            <CheckBox x:Name="ChkSyncOnly" Content="sync-only（同期のみ）" Margin="0,0,16,0" />
+            <CheckBox x:Name="ChkSyncOnly" Content="sync-only（索引の更新のみ）" Margin="0,0,16,0" />
             <CheckBox x:Name="ChkCommentsOnly" Content="comments-only（コメント収集のみ）" Margin="0,0,16,0"
                       ToolTip="コンテンツ実体を持つ作品のユーザーレビューだけを収集します（video モード）。停止しても再実行で続きから再開します。" />
             <CheckBox x:Name="ChkBuildCommentIndex" Content="build-comment-index（検索索引の作成）" Margin="0,0,16,0"

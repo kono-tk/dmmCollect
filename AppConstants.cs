@@ -11,7 +11,6 @@ namespace dmmCollect
 
         public const string ERROR_SCREENSHOT_FILENAME = "error_screenshot.png";
         public const string ERROR_HTML_FILENAME = "error_page.html";
-        public const string FLAT_DIR_NAME = "FLAT";
 
         // セレクター (DMMログイン)
         public const string LOGIN_ID_SELECTOR = "#login_id";

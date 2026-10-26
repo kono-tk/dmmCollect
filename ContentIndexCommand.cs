@@ -7,8 +7,7 @@ using System.Linq;
 namespace dmmCollect
 {
     /// <summary>
-    /// --build-content-index: コンテンツ索引（content_index.json）を作成・更新し、
-    /// 現行のタイトル照合（フォルダ名 → FindItemsForVideo）による対応付けとの差分を報告する。
+    /// --build-content-index: コンテンツ索引（content_index.json）を作成・更新し、索引の内容を報告する。
     /// </summary>
     public static class ContentIndexCommand
     {
@@ -70,48 +69,6 @@ namespace dmmCollect
             Console.WriteLine($"収録作品名を持つフォルダ: {index.Folders.Count(f => f.Titles.Count > 0)}");
             Console.WriteLine($"一覧に出る data.json の作品: {byCid.Keys.Count(dataCids.Contains)}");
 
-            // 現行のタイトル照合（フォルダ名 → data.json の作品）との比較
-            Console.WriteLine("\n--- 現行のタイトル照合との比較 ---");
-            var titleFolderByCid = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var folder in index.Folders.Where(f => f.Available))
-            {
-                string key = FileSanitizer.SanitizeFilename(Path.GetFileName(folder.Path));
-                foreach (var item in dataManager.FindItemsForVideo(key))
-                {
-                    string cid = ItemIdentity.Of(item);
-                    if (cid.Length > 0) titleFolderByCid.TryAdd(cid, folder.Path);
-                }
-            }
-
-            var agree = new List<string>();
-            var indexOnly = new List<string>();
-            var titleOnly = new List<string>();
-            var disagree = new List<string>();
-            foreach (var cid in byCid.Keys.Union(titleFolderByCid.Keys, StringComparer.OrdinalIgnoreCase).Where(dataCids.Contains))
-            {
-                bool inIndex = byCid.TryGetValue(cid, out var folders);
-                bool inTitle = titleFolderByCid.TryGetValue(cid, out var titleFolder);
-                if (inIndex && inTitle)
-                {
-                    if (folders!.Any(f => string.Equals(f.Path, titleFolder, StringComparison.OrdinalIgnoreCase))) agree.Add(cid);
-                    else disagree.Add(cid);
-                }
-                else if (inIndex) indexOnly.Add(cid);
-                else titleOnly.Add(cid);
-            }
-
-            Console.WriteLine($"一致: {agree.Count}");
-            Console.WriteLine($"索引でだけ実体が見つかる（タイトル照合では漏れていた）: {indexOnly.Count}");
-            foreach (var c in indexOnly.Take(15)) Console.WriteLine($"   {c}: {Path.GetFileName(byCid[c][0].Path)}");
-            Console.WriteLine($"タイトル照合でだけ見つかる（索引では別の作品の実体）: {titleOnly.Count}");
-            foreach (var c in titleOnly.Take(15))
-            {
-                string folder = titleFolderByCid[c];
-                string? indexCid = index.Folders.FirstOrDefault(f => string.Equals(f.Path, folder, StringComparison.OrdinalIgnoreCase))?.Cid;
-                Console.WriteLine($"   {c}: {Path.GetFileName(folder)}（索引では {indexCid ?? "cid なし"}）");
-            }
-            Console.WriteLine($"対応するフォルダが食い違う: {disagree.Count}");
-            foreach (var c in disagree.Take(15)) Console.WriteLine($"   {c}: 照合 {Path.GetFileName(titleFolderByCid[c])} / 索引 {Path.GetFileName(byCid[c][0].Path)}");
         }
     }
 }

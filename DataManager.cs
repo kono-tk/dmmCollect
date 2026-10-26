@@ -21,21 +21,11 @@ namespace dmmCollect
         // サイト側の表記が変わる（「〜」→「～」、改題で「File1」が入る等）と別作品として
         // 追加され、同じ作品が2件・ファイルも2本になっていた。
         private readonly Dictionary<string, int> _idIndex = new();
-        private readonly Dictionary<string, List<JsonObject>> _exactMatchCache = new();
-        private readonly Dictionary<string, List<JsonObject>> _colonRemovedMatchCache = new();
-        private readonly Dictionary<string, List<JsonObject>> _flexibleMatchCache = new();
         private readonly Dictionary<string, HashSet<string>> _aliasGroups = new(StringComparer.OrdinalIgnoreCase);
         // 出演者エイリアスの外部共有ファイル（モード別 performer_aliases_{mode}.json）。null/未存在なら data.json 内にフォールバック。
         private readonly string? _performerAliasesPath;
-        private readonly Dictionary<int, string> _sanCache = new();
-        private readonly Dictionary<int, string?> _sanFirst3Cache = new();
-
-        // UpdateOrAddEntry で作品が増えた・変わった後は、FindItemsForVideo が使う照合用キャッシュが古い。
-        // 次に FindItemsForVideo が呼ばれたときに作り直す（スクレイピング中の更新のたびには作り直さない）。
-        private bool _matchCachesStale;
 
         private static readonly Regex TitlePrefixPattern = new(@"^(HD|8K|HQ|4K|FULLHD|SD|SP|PPV|Blu-ray|BluRay|DVD|\s)+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        private static readonly Regex HashPattern = new(@"[_\-]?[a-fA-F0-9]{6,32}$", RegexOptions.Compiled);
 
         public DataManager(string dataPath, bool backupOnInit = false, string? performerAliasesPath = null)
         {
@@ -252,15 +242,9 @@ namespace dmmCollect
 
         private void BuildIndexes()
         {
-            _matchCachesStale = false;
             _titleIndex.Clear();
             _subtitleIndex.Clear();
             _idIndex.Clear();
-            _exactMatchCache.Clear();
-            _colonRemovedMatchCache.Clear();
-            _flexibleMatchCache.Clear();
-            _sanCache.Clear();
-            _sanFirst3Cache.Clear();
 
             for (int i = 0; i < Data.Count; i++)
             {
@@ -271,34 +255,6 @@ namespace dmmCollect
                     string normTitle = NormalizeTitle(title);
                     _titleIndex[normTitle] = i;
 
-                    string exactKey = FileSanitizer.SanitizeFilename(title);
-                    if (!_exactMatchCache.TryGetValue(exactKey, out var exactList))
-                    {
-                        exactList = new List<JsonObject>();
-                        _exactMatchCache[exactKey] = exactList;
-                    }
-                    exactList.Add(item);
-
-                    string colonKey = FileSanitizer.SanitizeFilenameRemoveColon(title);
-                    if (!_colonRemovedMatchCache.TryGetValue(colonKey, out var colonList))
-                    {
-                        colonList = new List<JsonObject>();
-                        _colonRemovedMatchCache[colonKey] = colonList;
-                    }
-                    colonList.Add(item);
-
-                    string flexKey = NormalizeSeparators(exactKey);
-                    if (!_flexibleMatchCache.TryGetValue(flexKey, out var flexList))
-                    {
-                        flexList = new List<JsonObject>();
-                        _flexibleMatchCache[flexKey] = flexList;
-                    }
-                    flexList.Add(item);
-
-                    int refKey = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(item);
-                    _sanCache[refKey] = exactKey;
-                    var sanWords = Regex.Split(exactKey, @"[_\-\s]+").Where(w => !string.IsNullOrEmpty(w)).ToArray();
-                    _sanFirst3Cache[refKey] = sanWords.Length >= 3 ? string.Join("_", sanWords.Take(3)) : null;
                 }
 
                 string? subtitle = item["subtitle"]?.ToString();
@@ -397,101 +353,7 @@ namespace dmmCollect
                 }
             }
 
-            if (updated) _matchCachesStale = true;
             return updated;
-        }
-
-        public List<JsonObject> FindItemsForVideo(string searchKey)
-        {
-            // 同じ実行の中で追加・更新された作品（新規ダウンロード分など）も照合できるようにする
-            if (_matchCachesStale)
-            {
-                BuildIndexes();
-            }
-
-            if (_exactMatchCache.TryGetValue(searchKey, out var exactMatches))
-            {
-                return exactMatches;
-            }
-
-            if (_colonRemovedMatchCache.TryGetValue(searchKey, out var colonRemovedMatches))
-            {
-                return colonRemovedMatches;
-            }
-
-            string normalizedSearchKey = NormalizeSeparators(searchKey);
-            if (_flexibleMatchCache.TryGetValue(normalizedSearchKey, out var flexibleMatches))
-            {
-                return flexibleMatches;
-            }
-
-            var partialMatches = Data.Where(item =>
-            {
-                int rk = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(item);
-                return _sanCache.TryGetValue(rk, out var san) && !string.IsNullOrEmpty(san) && san.StartsWith(searchKey);
-            }).ToList();
-
-            if (partialMatches.Any())
-            {
-                return partialMatches;
-            }
-
-            if (searchKey.Length > 20)
-            {
-                var reverseMatches = Data.Where(item =>
-                {
-                    int rk = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(item);
-                    return _sanCache.TryGetValue(rk, out var san) && !string.IsNullOrEmpty(san) && searchKey.StartsWith(san);
-                }).ToList();
-
-                if (reverseMatches.Any())
-                {
-                    return reverseMatches;
-                }
-            }
-
-            string cleanedSearchKey = HashPattern.Replace(searchKey, "").TrimEnd('_', '-');
-            if (cleanedSearchKey != searchKey && cleanedSearchKey.Length > 10)
-            {
-                var hashMatches = Data.Where(item =>
-                {
-                    int rk = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(item);
-                    if (!_sanCache.TryGetValue(rk, out var san) || string.IsNullOrEmpty(san)) return false;
-                    return san.StartsWith(cleanedSearchKey) || cleanedSearchKey.StartsWith(san);
-                }).ToList();
-
-                if (hashMatches.Any())
-                {
-                    return hashMatches;
-                }
-            }
-
-            if (searchKey.Length > 15)
-            {
-                var words = Regex.Split(searchKey, @"[_\-\s]+").Where(w => !string.IsNullOrEmpty(w)).ToArray();
-                if (words.Length >= 3)
-                {
-                    string firstWordsKey = string.Join("_", words.Take(3));
-                    var wordMatches = Data.Where(item =>
-                    {
-                        int rk = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(item);
-                        return _sanFirst3Cache.TryGetValue(rk, out var first3) && first3 != null && first3 == firstWordsKey;
-                    }).ToList();
-
-                    if (wordMatches.Any())
-                    {
-                        return wordMatches;
-                    }
-                }
-            }
-
-            return new List<JsonObject>();
-        }
-
-        private string NormalizeSeparators(string text)
-        {
-            string normalized = Regex.Replace(text, @"[_\-\s]+", " ");
-            return normalized.Trim();
         }
     }
 }

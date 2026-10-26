@@ -96,7 +96,6 @@ namespace dmmCollect
             Path.Combine(Path.GetDirectoryName(ConfigPath) ?? ".", $"performer_aliases_{Mode}.json");
 
         public List<string> TargetRoots { get; private set; } = new();
-        public int MaxShortcutFilenameLength { get; private set; } = 100;
         public string VideoDownloadDirectory { get; private set; } = "";
 
         public ConfigManager(string mode)
@@ -213,7 +212,6 @@ namespace dmmCollect
                     Console.WriteLine($"ConfigWarning: target_root directory does not exist: {root}");
                 }
             }
-            MaxShortcutFilenameLength = Config.search.max_shortcut_filename_length != 0 ? Config.search.max_shortcut_filename_length : 100;
 
             string? downloadDir = Config.video?.download_directory;
             if (string.IsNullOrEmpty(downloadDir))
