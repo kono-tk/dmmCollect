@@ -28,6 +28,7 @@ namespace dmmCollect
             bool commentsOnly = false;
             bool recheckComments = false;
             bool buildCommentIndex = false;
+            bool buildContentIndex = false;
             bool analyzeComments = false;
             bool dryRun = false;
             bool verifyLlm = false;
@@ -83,6 +84,10 @@ namespace dmmCollect
                 {
                     dryRun = true;
                 }
+                else if (args[i] == "--build-content-index")
+                {
+                    buildContentIndex = true;
+                }
                 else if (args[i] == "--build-comment-index")
                 {
                     buildCommentIndex = true;
@@ -126,6 +131,17 @@ namespace dmmCollect
             Console.WriteLine($"DataPath: {dataPath}");
 
             var dataManager = new DataManager(dataPath, backupOnInit: true, performerAliasesPath: config.PerformerAliasesPath);
+
+            // === コンテンツ索引（cid → 実体フォルダ）の作成のみ ===
+            if (buildContentIndex)
+            {
+                if (mode != "video")
+                {
+                    Console.WriteLine("[FATAL] コンテンツ索引は video モードでのみ使用できます。");
+                    return 1;
+                }
+                return ContentIndexCommand.Run(config, dataManager);
+            }
 
             // === コメント解析（観点の評判・星と本文の食い違い）のみ ===
             if (analyzeComments)
@@ -421,6 +437,8 @@ namespace dmmCollect
             Console.WriteLine("                          stop_comments.txt を置くと作品の切れ目で停止します。");
             Console.WriteLine("  --build-comment-index   実体フォルダの comments.json から全文検索用の SQLite 索引（BaseDirectory\\comments.sqlite）を");
             Console.WriteLine("                          作成/更新して終了します。収集時にも1作品ごとに自動更新されます。");
+            Console.WriteLine("  --build-content-index   コンテンツ索引（BaseDirectory\\content_index.json。cid → 実体フォルダ）を作成/更新し、");
+            Console.WriteLine("                          現行のタイトル照合との差分を表示して終了します。2回目以降は変わった .dcv だけを読みます。");
             Console.WriteLine("  --analyze-comments      コメントから観点の評判（演技が好評など）と、星評価と本文の食い違いを求めて");
             Console.WriteLine("                          data.json に書き込んで終了します（辞書とルールの解析で数秒）。--dry-run で書き込まずに結果だけ表示。");
             Console.WriteLine("  --dump-aspects <file>   --analyze-comments と併用（辞書調整用）。観点ごとの極性判定を1行1件の JSON で書き出します。");
