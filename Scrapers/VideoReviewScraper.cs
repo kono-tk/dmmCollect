@@ -15,7 +15,6 @@ namespace dmmCollect.Scrapers
     // レビュー一覧は画面内に入ってから GraphQL で遅延読み込みされ、10件ずつのボタン式ページング。
     public partial class VideoScraper
     {
-        private const string ContentPageUrlFormat = "https://video.dmm.co.jp/av/content/?id={0}";
         private const string ReviewItemSelector = "#review [data-e2eid=\"review-item\"]";
 
         /// <summary>
@@ -36,9 +35,10 @@ namespace dmmCollect.Scrapers
         /// 作品ページからユーザーレビューを収集する。ページ取得自体に失敗した場合は null。
         /// コメント付きレビューが 0 件でも、集計値（平均評価など）を入れたコレクションを返す。
         /// </summary>
-        public async Task<ReviewCollection?> FetchReviewsForItemAsync(string cid)
+        /// <param name="floor">VideoFloor.Av / VideoFloor.Amateur（素人作品は作品ページの URL が違う）</param>
+        public async Task<ReviewCollection?> FetchReviewsForItemAsync(string cid, string floor = VideoFloor.Av)
         {
-            string url = string.Format(ContentPageUrlFormat, cid);
+            string url = VideoFloor.ContentPageUrl(cid, floor);
             var result = new ReviewCollection
             {
                 Cid = cid,

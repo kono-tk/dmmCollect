@@ -17,7 +17,8 @@ namespace dmmCollect.Scrapers
     public partial class VideoScraper : BaseScraper
     {
         private static readonly Regex CidFromHrefPattern = new(@"(?:cid|id)=([a-zA-Z0-9_]+)", RegexOptions.Compiled);
-        private static readonly Regex CidFromSrcPattern = new(@"/digital/video/([^/]+)/", RegexOptions.Compiled);
+        // サムネイルの URL。通常作品は /digital/video/<cid>/、素人作品は /digital/amateur/<cid>/（1つ目のグループがフロア）
+        private static readonly Regex CidFromSrcPattern = new(@"/digital/(video|amateur)/([^/]+)/", RegexOptions.Compiled);
         private static readonly Regex HashPattern = new(@"[_\-]?[a-fA-F0-9]{6,32}$", RegexOptions.Compiled);
         
         private readonly HttpClient _httpClient = new();
@@ -571,8 +572,17 @@ namespace dmmCollect.Scrapers
                 }
                 else
                 {
+                    // 品番が分からなくても、ダウンロードと購入日の記録は続ける（リンクが無い形式でも作品の処理全体を止めない）
                     var detailLink = Page.Locator("div.global-dialog:visible").Locator(AppConstants.POPUP_DETAIL_LINK_SELECTOR).First;
-                    string? href = await detailLink.GetAttributeAsync("href");
+                    string? href = null;
+                    try
+                    {
+                        href = await detailLink.GetAttributeAsync("href", new() { Timeout = 5000 });
+                    }
+                    catch (TimeoutException)
+                    {
+                        Console.WriteLine($"\n[WARNING] '{rawTitle}' の作品ページへのリンクが見つかりません（品番なしで続行します）");
+                    }
                     if (!string.IsNullOrEmpty(href))
                     {
                         var match = CidFromHrefPattern.Match(href);
@@ -798,7 +808,7 @@ namespace dmmCollect.Scrapers
                 var match = CidFromSrcPattern.Match(imageUrl);
                 if (!match.Success) continue;
 
-                string cid = match.Groups[1].Value;
+                string cid = match.Groups[2].Value;
                 string imageFilename = Path.GetFileName(imageUrl);
                 int qIdx = imageFilename.IndexOf('?');
                 if (qIdx >= 0)
@@ -813,6 +823,13 @@ namespace dmmCollect.Scrapers
                     ["image_filename"] = imageFilename
                 };
                 KeepExistingCid(dataManager, entryData);
+
+                // 素人作品は作品ページの URL が通常作品と違う（通常作品の URL では 404 になる）。
+                // 詳細取得・コメント収集が正しいページを開けるよう、素人用の URL を入れておく。
+                if (match.Groups[1].Value == "amateur" && entryData.ContainsKey("cid"))
+                {
+                    entryData["detail_url"] = VideoFloor.ContentPageUrl(cid, VideoFloor.Amateur);
+                }
 
                 if (dataManager.UpdateOrAddEntry(entryData))
                 {
@@ -888,7 +905,7 @@ namespace dmmCollect.Scrapers
                     var match = CidFromSrcPattern.Match(imageUrl);
                     if (match.Success)
                     {
-                        cid = match.Groups[1].Value;
+                        cid = match.Groups[2].Value;
                     }
                 }
 
@@ -1079,9 +1096,12 @@ namespace dmmCollect.Scrapers
             }
         }
 
-        public async Task<Dictionary<string, object>?> FetchDetailsForItemAsync(string cid)
+        /// <param name="floor">VideoFloor.Av / VideoFloor.Amateur。素人作品は通常作品の詳細 URL では 404 になる。</param>
+        public async Task<Dictionary<string, object>?> FetchDetailsForItemAsync(string cid, string floor = VideoFloor.Av)
         {
-            string url = Urls["detail_page_base"].Replace("{cid}", cid);
+            string url = floor == VideoFloor.Amateur
+                ? VideoFloor.ContentPageUrl(cid, VideoFloor.Amateur)
+                : Urls["detail_page_base"].Replace("{cid}", cid);
             return await FetchDetailsForItemByUrlAsync(url);
         }
 
@@ -1194,15 +1214,23 @@ namespace dmmCollect.Scrapers
                     var table = soup.QuerySelector("table.text-xs");
                     if (table != null)
                     {
-                        var rows = table.QuerySelectorAll("tr");
+                        // 見出しが完全に一致する行を優先する。部分一致だけだと、素人作品の「メーカー品番」を
+                        // 「メーカー」として拾ってしまう（素人作品の表にはメーカーの行が無い）。
+                        // 見出しは改行や空白を含むことがある（例: "出演者\n："）ので、空白とコロンをすべて除いて比べる
+                        string HeaderText(IElement r) =>
+                            Regex.Replace(r.QuerySelector("th")?.TextContent ?? "", @"[\s：:]", "");
+                        var allRows = table.QuerySelectorAll("tr").ToList();
+                        var rows = allRows.Where(r => HeaderText(r).Equals(header, StringComparison.OrdinalIgnoreCase)).ToList();
+                        if (rows.Count == 0)
+                        {
+                            rows = allRows.Where(r => HeaderText(r).Contains(header) && !HeaderText(r).Contains("品番")).ToList();
+                        }
                         foreach (var row in rows)
                         {
                             var th = row.QuerySelector("th");
                             var td = row.QuerySelector("td");
                             if (th != null && td != null)
                             {
-                                string thText = th.TextContent.Trim().Replace("：", "").Replace(":", "");
-                                if (thText.Equals(header, StringComparison.OrdinalIgnoreCase) || thText.Contains(header))
                                 {
                                     if (isList)
                                     {
@@ -1246,7 +1274,13 @@ namespace dmmCollect.Scrapers
 
                 details["date"] = getTableData("商品発売日", false) ?? getTableData("配信開始日", false) ?? "";
                 details["duration"] = getTableData("収録時間", false) ?? "";
-                details["performers"] = getTableData("出演者", true) ?? new List<string>();
+                // 素人作品には「出演者」の行が無く、出演者の名前は「名前」の行にある
+                var performers = getTableData("出演者", true) as List<string>;
+                if ((performers == null || performers.Count == 0) && getTableData("名前", false) is string personName && personName.Length > 0)
+                {
+                    performers = new List<string> { personName };
+                }
+                details["performers"] = performers ?? new List<string>();
                 details["director"] = getTableData("監督", false) ?? "";
                 details["series"] = getTableData("シリーズ", false) ?? "";
                 details["maker"] = getTableData("メーカー", false) ?? "";
@@ -1517,7 +1551,7 @@ namespace dmmCollect.Scrapers
                 
                 Console.WriteLine($"[{count}/{itemsToFetch.Count}] 詳細情報を取得中: {title} (CID: {cid})");
                 
-                var details = await FetchDetailsForItemAsync(cid);
+                var details = await FetchDetailsForItemAsync(cid, VideoFloor.FromUrl(item["detail_url"]?.ToString()));
                 await Task.Delay(1000); // サーバー負荷軽減
 
                 if (details != null)

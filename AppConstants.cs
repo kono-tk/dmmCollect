@@ -33,7 +33,8 @@ namespace dmmCollect
         public const string MYLIBRARY_BASE_URL = "https://video.dmm.co.jp/mylibrary/";
         public const string LOAD_MORE_BUTTON_SELECTOR = "button:has-text(\"\u3082\u3063\u3068\u898b\u308b\")";
         public const string PURCHASE_DATE_POPUP_SELECTOR = "div.text-white.text-xs.mt-2.text-center";
-        public const string POPUP_DETAIL_LINK_SELECTOR = "a[href*=\"/av/content/\"]";
+        // 作品ページへのリンク（通常作品は /av/content/、素人作品は /amateur/content/）
+        public const string POPUP_DETAIL_LINK_SELECTOR = "a[href*=\"/av/content/\"], a[href*=\"/amateur/content/\"]";
         public const string POPUP_CLOSE_BUTTON_SELECTOR = "button.absolute.top-0.right-0";
         public const string IMAGE_TAGS_SELECTOR = "ul.grid li img[src][alt]";
 

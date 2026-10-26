@@ -110,7 +110,7 @@ namespace dmmCollect
                     string title = entry["title"]?.ToString() ?? "";
                     Console.WriteLine($"[{index}/{targets.Count}] {cid} {Truncate(title, 40)}");
 
-                    var reviews = await scraper.FetchReviewsForItemAsync(cid);
+                    var reviews = await scraper.FetchReviewsForItemAsync(cid, VideoFloor.FromUrl(entry["detail_url"]?.ToString()));
                     if (reviews == null)
                     {
                         failed++;
