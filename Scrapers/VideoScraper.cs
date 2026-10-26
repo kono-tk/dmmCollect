@@ -812,6 +812,7 @@ namespace dmmCollect.Scrapers
                     ["cid"] = cid,
                     ["image_filename"] = imageFilename
                 };
+                KeepExistingCid(dataManager, entryData);
 
                 if (dataManager.UpdateOrAddEntry(entryData))
                 {
@@ -899,6 +900,7 @@ namespace dmmCollect.Scrapers
                 if (cid != null)
                 {
                     entryData["cid"] = cid;
+                    KeepExistingCid(dataManager, entryData);
                 }
 
                 if (dataManager.UpdateOrAddEntry(entryData))
@@ -956,6 +958,7 @@ namespace dmmCollect.Scrapers
                         ["cid"] = cid,
                         ["image_filename"] = imageFilename
                     };
+                    KeepExistingCid(dataManager, entryData);
 
                     if (dataManager.UpdateOrAddEntry(entryData))
                     {
@@ -977,6 +980,27 @@ namespace dmmCollect.Scrapers
             {
                 dataManager.SaveData();
             }
+        }
+
+        /// <summary>
+        /// マイライブラリの一覧（サムネイル画像やリンクの URL）から取った品番は、再販などで品番が変わった作品では
+        /// 購入記録や実体（.dcv）の品番と食い違うことがある（例: rbb00164 の作品のサムネイルが旧品番 rbb00149 のまま）。
+        /// 既存の作品に別の cid が入っている場合は、cid と画像を上書きしない（手で直した cid を巡回のたびに戻さないため）。
+        /// cid がまだ無い作品には、従来どおり一覧の品番を入れる。
+        /// </summary>
+        private static void KeepExistingCid(DataManager dataManager, JsonObject entryData)
+        {
+            string newCid = entryData["cid"]?.ToString() ?? "";
+            string title = entryData["title"]?.ToString() ?? "";
+            if (newCid.Length == 0 || title.Length == 0) return;
+
+            var existing = dataManager.FindEntry(DataManager.NormalizeTitle(title));
+            string existingCid = existing == null ? "" : ItemIdentity.Of(existing);
+            if (existingCid.Length == 0 || string.Equals(existingCid, newCid, StringComparison.OrdinalIgnoreCase)) return;
+
+            Console.WriteLine($"\n[INFO] 一覧の品番 {newCid} は登録済みの cid {existingCid} と異なるため、cid と画像は更新しません: {title}");
+            entryData.Remove("cid");
+            entryData.Remove("image_filename");
         }
 
         private async Task ReportDownloadProgressAsync(string fileName, Stopwatch stopwatch, CancellationToken token)
