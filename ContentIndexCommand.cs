@@ -35,10 +35,28 @@ namespace dmmCollect
             return 0;
         }
 
+        /// <summary>
+        /// フォルダ名 → フォルダ名と作品名（ファイル名用に整えたもの）が一致する data.json の作品の cid。
+        /// 同じ作品名が複数ある場合は決められないので null（ContentIndex.FoldersByWork の福袋の中身の判定に使う）。
+        /// </summary>
+        public static Func<string, string?> CidForFolderName(DataManager dataManager)
+        {
+            var byTitle = new Dictionary<string, string?>(StringComparer.Ordinal);
+            foreach (var e in dataManager.Data)
+            {
+                string cid = ItemIdentity.Of(e);
+                string title = e["title"]?.ToString() ?? "";
+                if (cid.Length == 0 || title.Length == 0) continue;
+                string key = FileSanitizer.SanitizeFilename(title);
+                byTitle[key] = byTitle.TryGetValue(key, out var existing) && !string.Equals(existing, cid, StringComparison.OrdinalIgnoreCase) ? null : cid;
+            }
+            return name => byTitle.TryGetValue(name, out var cid) ? cid : null;
+        }
+
         private static void Report(ContentIndex index, ConfigManager config, DataManager dataManager)
         {
             var dataCids = new HashSet<string>(dataManager.Data.Select(e => ItemIdentity.Of(e)).Where(c => c.Length > 0), StringComparer.OrdinalIgnoreCase);
-            var byCid = index.FoldersByCid();
+            var byCid = index.FoldersByWork(CidForFolderName(dataManager));
 
             Console.WriteLine("\n--- 索引の内容 ---");
             Console.WriteLine($"cid を読めなかったフォルダ: {index.Folders.Count(f => f.Cid == null)}");
@@ -49,6 +67,7 @@ namespace dmmCollect
             var multi = byCid.Where(p => p.Value.Count > 1).ToList();
             Console.WriteLine($"複数の実体フォルダを持つ cid: {multi.Count}（{multi.Sum(p => p.Value.Count)} フォルダ）");
             foreach (var p in multi.Take(10)) Console.WriteLine($"   {p.Key}: {p.Value.Count} フォルダ（例: {Path.GetFileName(p.Value[0].Path)}）");
+            Console.WriteLine($"福袋の中身として振り分けたフォルダ: {byCid.Sum(p => p.Value.Count(f => !string.Equals(f.Cid, p.Key, StringComparison.OrdinalIgnoreCase)))}");
             Console.WriteLine($"収録作品名を持つフォルダ: {index.Folders.Count(f => f.Titles.Count > 0)}");
             Console.WriteLine($"一覧に出る data.json の作品: {byCid.Keys.Count(dataCids.Contains)}");
 

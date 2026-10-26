@@ -139,6 +139,63 @@ namespace dmmCollect
         }
 
         /// <summary>
+        /// 作品の cid → 実体フォルダ。基本は .dcv の cid だが、福袋の中身は別扱いにする。
+        ///
+        /// 福袋を買うと、福袋そのものと中身の各作品が data.json に別々の作品として載り、中身は作品ごとのフォルダに
+        /// ダウンロードされる。ところが中身のフォルダの .dcv には福袋の cid が記録されている。.dcv の cid だけで判定すると、
+        /// 中身の作品の実体がすべて福袋に吸い込まれ、個々の作品が一覧から消えてしまう。
+        /// そこで、.dcv の cid が複数のフォルダを持つ場合に限り、フォルダ名と作品名が一致する作品（cidForFolderName が返す）
+        /// があれば、そのフォルダはその作品のものとする。
+        /// </summary>
+        /// <param name="cidForFolderName">フォルダ名 → そのフォルダ名と作品名が一致する作品の cid（一意に決まらなければ null）</param>
+        public Dictionary<string, List<ContentFolder>> FoldersByWork(Func<string, string?>? cidForFolderName = null)
+        {
+            var folderCount = Folders
+                .Where(f => !string.IsNullOrEmpty(f.Cid))
+                .GroupBy(f => f.Cid!, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+
+            var map = new Dictionary<string, List<ContentFolder>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var folder in Folders)
+            {
+                if (string.IsNullOrEmpty(folder.Cid)) continue;
+
+                string cid = folder.Cid;
+                if (cidForFolderName != null && folderCount[cid] > 1)
+                {
+                    string? component = cidForFolderName(System.IO.Path.GetFileName(folder.Path));
+                    if (!string.IsNullOrEmpty(component)) cid = component;
+                }
+
+                if (!map.TryGetValue(cid, out var list)) map[cid] = list = new List<ContentFolder>();
+                list.Add(folder);
+            }
+            return map;
+        }
+
+        /// <summary>
+        /// 作品の cid → 作品単位のファイル（comments.json など）を置く実体フォルダ。dmmCollect（書く側）と dmmWin（読む側）で
+        /// 同じフォルダを選ぶための決まり（作品とフォルダの対応は FoldersByWork と同じ）:
+        ///   ・確認できていない（Available=false）フォルダは除く
+        ///   ・existingFileName を指定すると、そのファイルが既にあるフォルダを優先する
+        ///   ・無ければパス順で最初のフォルダ（1つの作品に複数フォルダあっても、常に同じフォルダになる）
+        /// </summary>
+        public Dictionary<string, string> WorkFolderByCid(string? existingFileName = null, Func<string, string?>? cidForFolderName = null)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (cid, folders) in FoldersByWork(cidForFolderName))
+            {
+                var paths = folders.Where(f => f.Available).Select(f => f.Path).OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToList();
+                if (paths.Count == 0) continue;
+                string? withFile = existingFileName == null
+                    ? null
+                    : paths.FirstOrDefault(p => File.Exists(System.IO.Path.Combine(p, existingFileName)));
+                map[cid] = withFile ?? paths[0];
+            }
+            return map;
+        }
+
+        /// <summary>
         /// roots 配下の実体フォルダを走査して索引を作る。previous があれば、変わっていない .dcv は読み直さない。
         /// 見つからない root（ドライブ未接続など）の配下は、previous の情報を Available=false で引き継ぐ。
         /// </summary>

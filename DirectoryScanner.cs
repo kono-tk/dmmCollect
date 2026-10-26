@@ -20,26 +20,6 @@ namespace dmmCollect
             TargetRoots = targetRoots;
         }
 
-        /// <summary>
-        /// cid → コンテンツ実体フォルダ（.dcv の親フォルダ）の対応表を返す。
-        /// フォルダ名からの作品特定は、ショートカット同期や dmmWin と同じ FindItemsForVideo を使う。
-        /// 同じ作品に複数フォルダが対応する場合は先に見つかったものを採用する。
-        /// </summary>
-        public Dictionary<string, string> MapContentFoldersByCid(DataManager dataManager)
-        {
-            var map = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var folder in FindAllDcvParentFolders())
-            {
-                string key = FileSanitizer.SanitizeFilename(Path.GetFileName(folder));
-                foreach (var item in dataManager.FindItemsForVideo(key))
-                {
-                    string cid = ItemIdentity.Of(item);
-                    if (cid.Length > 0) map.TryAdd(cid, folder);
-                }
-            }
-            return map;
-        }
-
         public List<string> FindAllDcvParentFolders()
         {
             Console.WriteLine("TargetRoots 内の全 .dcv ファイルの親フォルダを検索しています...");

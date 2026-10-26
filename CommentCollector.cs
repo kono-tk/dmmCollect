@@ -56,8 +56,7 @@ namespace dmmCollect
 
             try
             {
-                var scanner = new DirectoryScanner(config.BaseDirectory, config.TargetRoots);
-                var folderByCid = scanner.MapContentFoldersByCid(dataManager);
+                var folderByCid = LoadWorkFolders(config, dataManager);
                 Console.WriteLine($"コンテンツ実体を持つ作品: {folderByCid.Count} 件");
 
                 // 全文検索用の索引。失敗しても収集（comments.json / data.json）は続ける。
@@ -168,6 +167,24 @@ namespace dmmCollect
             else entry.Remove(RatingAverageKey);
         }
 
+        /// <summary>
+        /// cid → comments.json を置く実体フォルダ。コンテンツ索引（.dcv に埋め込まれた cid）を差分更新してから求める
+        /// （以前はフォルダ名と作品タイトルのあいまい照合で求めていた）。
+        /// 1つの cid に複数フォルダある作品は、comments.json が既にあるフォルダを優先する（dmmWin も同じ決まりで読む）。
+        /// </summary>
+        private static Dictionary<string, string> LoadWorkFolders(ConfigManager config, DataManager dataManager)
+        {
+            string indexPath = ContentIndex.PathFor(config.BaseDirectory);
+            var index = ContentIndex.Build(config.TargetRoots, ContentIndex.Load(indexPath), out var stats, Console.WriteLine);
+            index.Save(indexPath);
+            Console.WriteLine($"コンテンツ索引を更新しました（実体フォルダ {stats.Folders} 件 / .dcv 読み込み {stats.FilesRead} 件）");
+            if (stats.UnavailableRoots.Count > 0)
+            {
+                Console.WriteLine($"[WARNING] 見つからないフォルダ（前回の情報を引き継ぎ）: {string.Join(", ", stats.UnavailableRoots)}");
+            }
+            return index.WorkFolderByCid(CommentStore.FileName, ContentIndexCommand.CidForFolderName(dataManager));
+        }
+
         private static CommentIndex? OpenIndex(ConfigManager config)
         {
             try
@@ -188,8 +205,7 @@ namespace dmmCollect
         public static int BuildIndex(ConfigManager config, DataManager dataManager)
         {
             Console.WriteLine("=== コメント索引の作成 ===");
-            var scanner = new DirectoryScanner(config.BaseDirectory, config.TargetRoots);
-            var folderByCid = scanner.MapContentFoldersByCid(dataManager);
+            var folderByCid = LoadWorkFolders(config, dataManager);
 
             using var index = new CommentIndex(config.BaseDirectory);
             var entryByCid = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
