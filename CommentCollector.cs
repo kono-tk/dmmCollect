@@ -13,7 +13,9 @@ using dmmCollect.Scrapers;
 namespace dmmCollect
 {
     /// <summary>
-    /// コンテンツ実体（.dcv を含むフォルダ）を持つ作品のユーザーレビューを順に収集する。
+    /// ユーザーレビューを順に収集する。
+    /// video はコンテンツ実体（.dcv を含むフォルダ）を持つ作品が対象で、実体フォルダの comments.json に保存する（ブラウザで取得）。
+    /// books は data.json の全作品が対象で、BaseDirectory\comments\&lt;cid&gt;.json に保存する（HTTP で取得）。
     ///
     /// ・1作品ごとに comments.json と data.json を書き込むため、途中で止まっても再実行で続きから進む。
     ///   確認済みの作品には data.json に comments_checked_at を記録し、通常は再確認しない
@@ -31,8 +33,25 @@ namespace dmmCollect
         private const string RatingAverageKey = "rating_average";
         private const string RatingCountKey = "rating_count";
         private const int DelayBetweenItemsMs = 1000;
+        private const int DelayBetweenBooksMs = 500;
 
-        public static async Task<int> RunAsync(VideoScraper scraper, ConfigManager config, DataManager dataManager, string? onlyCid, bool recheck)
+        /// <summary>1作品分のレビューを取得する。失敗したら null。</summary>
+        private delegate Task<ReviewCollection?> ReviewFetcher(JsonObject entry, string cid, CancellationToken ct);
+
+        /// <summary>video: コンテンツ実体を持つ作品のレビューを、ブラウザで作品ページから収集する。</summary>
+        public static Task<int> RunAsync(VideoScraper scraper, ConfigManager config, DataManager dataManager, string? onlyCid, bool recheck) =>
+            RunCoreAsync(config, dataManager, onlyCid, recheck,
+                (entry, cid, _) => scraper.FetchReviewsForItemAsync(cid, VideoFloor.FromUrl(entry["detail_url"]?.ToString())),
+                DelayBetweenItemsMs, analyze: true);
+
+        /// <summary>books: data.json の全作品のレビューを、書籍サイトのレビュー API から収集する（ブラウザ・ログイン不要）。</summary>
+        public static Task<int> RunBooksAsync(ConfigManager config, DataManager dataManager, string? onlyCid, bool recheck) =>
+            RunCoreAsync(config, dataManager, onlyCid, recheck,
+                (entry, cid, ct) => BookReviewClient.FetchAsync(cid, entry["detail_url"]?.ToString() ?? "", ct),
+                DelayBetweenBooksMs, analyze: false);
+
+        private static async Task<int> RunCoreAsync(ConfigManager config, DataManager dataManager, string? onlyCid, bool recheck,
+                                                     ReviewFetcher fetch, int delayBetweenItemsMs, bool analyze)
         {
             Console.WriteLine("=== コメント収集 ===");
 
@@ -56,8 +75,10 @@ namespace dmmCollect
 
             try
             {
-                var folderByCid = LoadWorkFolders(config, dataManager);
-                Console.WriteLine($"コンテンツ実体を持つ作品: {folderByCid.Count} 件");
+                var pathByCid = CommentPaths(config, dataManager);
+                Console.WriteLine(config.Mode == "video"
+                    ? $"コンテンツ実体を持つ作品: {pathByCid.Count} 件"
+                    : $"作品: {pathByCid.Count} 件");
 
                 // 全文検索用の索引。失敗しても収集（comments.json / data.json）は続ける。
                 CommentIndex? commentIndex = OpenIndex(config);
@@ -69,12 +90,12 @@ namespace dmmCollect
                     Console.WriteLine($"ネタバレレビューの全文が未取得の作品: {collapsed.Count} 件（確認済みでも取り直します）");
                 }
 
-                var targets = new List<(JsonObject entry, string cid, string folder)>();
+                var targets = new List<(JsonObject entry, string cid, string path)>();
                 int skipped = 0;
                 foreach (var entry in dataManager.Data)
                 {
                     string cid = ItemIdentity.Of(entry);
-                    if (cid.Length == 0 || !folderByCid.TryGetValue(cid, out var folder)) continue;
+                    if (cid.Length == 0 || !pathByCid.TryGetValue(cid, out var path)) continue;
                     if (onlyCid != null && cid != onlyCid) continue;
                     if (!recheck && onlyCid == null && entry[CheckedAtKey] != null && entry[RatingCountKey] != null
                         && !collapsed.Contains(cid))
@@ -82,12 +103,14 @@ namespace dmmCollect
                         skipped++;
                         continue;
                     }
-                    targets.Add((entry, cid, folder));
+                    targets.Add((entry, cid, path));
                 }
 
                 if (onlyCid != null && targets.Count == 0)
                 {
-                    Console.WriteLine($"[FATAL] cid '{onlyCid}' のコンテンツ実体が見つかりません。");
+                    Console.WriteLine(config.Mode == "video"
+                        ? $"[FATAL] cid '{onlyCid}' のコンテンツ実体が見つかりません。"
+                        : $"[FATAL] cid '{onlyCid}' の作品が data.json にありません。");
                     return 1;
                 }
 
@@ -97,7 +120,7 @@ namespace dmmCollect
                 var stopwatch = Stopwatch.StartNew();
                 int done = 0, withComments = 0, failed = 0;
 
-                foreach (var (entry, cid, folder) in targets)
+                foreach (var (entry, cid, path) in targets)
                 {
                     if (cts.IsCancellationRequested || File.Exists(stopFile))
                     {
@@ -109,7 +132,16 @@ namespace dmmCollect
                     string title = entry["title"]?.ToString() ?? "";
                     Console.WriteLine($"[{index}/{targets.Count}] {cid} {Truncate(title, 40)}");
 
-                    var reviews = await scraper.FetchReviewsForItemAsync(cid, VideoFloor.FromUrl(entry["detail_url"]?.ToString()));
+                    ReviewCollection? reviews;
+                    try
+                    {
+                        reviews = await fetch(entry, cid, cts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        Console.WriteLine("[STOP] 停止しました。再実行すると続きから再開します。");
+                        break;
+                    }
                     if (reviews == null)
                     {
                         failed++;
@@ -119,7 +151,7 @@ namespace dmmCollect
 
                     if (reviews.Comments.Count > 0)
                     {
-                        string savedPath = CommentStore.Save(folder, reviews);
+                        string savedPath = CommentStore.SaveFile(path, reviews);
                         withComments++;
                         try { commentIndex?.Upsert(reviews, savedPath); }
                         catch (Exception ex) { Console.WriteLine($"[WARNING] コメント索引の更新に失敗しました: {ex.Message}"); }
@@ -138,13 +170,13 @@ namespace dmmCollect
                     TimeSpan remaining = TimeSpan.FromSeconds(elapsed.TotalSeconds / done * (targets.Count - done - failed));
                     Console.WriteLine($"  -> コメント {reviews.Comments.Count} 件 | 完了 {done}/{targets.Count}（コメントあり {withComments}、失敗 {failed}） | 経過 {Format(elapsed)} / 残り約 {Format(remaining)}");
 
-                    try { await Task.Delay(DelayBetweenItemsMs, cts.Token); } catch (OperationCanceledException) { }
+                    try { await Task.Delay(delayBetweenItemsMs, cts.Token); } catch (OperationCanceledException) { }
                 }
 
                 commentIndex?.Dispose();
 
                 // 収集で増えたコメントを観点の評判・食い違いに反映する（数秒。失敗しても収集結果には影響しない）
-                if (done > 0 && onlyCid == null)
+                if (analyze && done > 0 && onlyCid == null)
                 {
                     try { AnalyzeAll(config, dataManager, dryRun: false); }
                     catch (Exception ex) { Console.WriteLine($"[WARNING] コメント解析に失敗しました: {ex.Message}"); }
@@ -178,6 +210,27 @@ namespace dmmCollect
             return index.WorkFolderByCid(CommentStore.FileName, ContentIndex.CidForFolderName(dataManager.Data));
         }
 
+        /// <summary>
+        /// cid → レビューのファイル。video はコンテンツ実体フォルダの comments.json（実体のある作品だけ）、
+        /// books は BaseDirectory\comments\&lt;cid&gt;.json（data.json の全作品）。
+        /// </summary>
+        private static Dictionary<string, string> CommentPaths(ConfigManager config, DataManager dataManager)
+        {
+            if (config.Mode == "video")
+            {
+                return LoadWorkFolders(config, dataManager)
+                    .ToDictionary(p => p.Key, p => Path.Combine(p.Value, CommentStore.FileName), StringComparer.OrdinalIgnoreCase);
+            }
+
+            var paths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in dataManager.Data)
+            {
+                string cid = ItemIdentity.Of(entry);
+                if (cid.Length > 0) paths.TryAdd(cid, CommentStore.BookCommentPath(config.BaseDirectory, cid));
+            }
+            return paths;
+        }
+
         private static CommentIndex? OpenIndex(ConfigManager config)
         {
             try
@@ -192,13 +245,14 @@ namespace dmmCollect
         }
 
         /// <summary>
-        /// 実体フォルダの comments.json をすべて走査して全文検索索引へ取り込む。
+        /// 収集済みのレビューのファイル（video は実体フォルダの comments.json、books は comments\&lt;cid&gt;.json）を
+        /// すべて走査して全文検索索引へ取り込む。
         /// 索引済みで内容が変わっていないもの（更新日時・サイズ一致）はスキップするので、何度実行してもよい。
         /// </summary>
         public static int BuildIndex(ConfigManager config, DataManager dataManager)
         {
             Console.WriteLine("=== コメント索引の作成 ===");
-            var folderByCid = LoadWorkFolders(config, dataManager);
+            var pathByCid = CommentPaths(config, dataManager);
 
             using var index = new CommentIndex(config.BaseDirectory);
             var entryByCid = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
@@ -210,9 +264,8 @@ namespace dmmCollect
             int total = 0, indexed = 0, upToDate = 0, failed = 0, ratingsFilled = 0;
             var stopwatch = Stopwatch.StartNew();
 
-            foreach (var (cid, folder) in folderByCid)
+            foreach (var (cid, path) in pathByCid)
             {
-                string path = Path.Combine(folder, CommentStore.FileName);
                 if (!File.Exists(path)) continue;
                 total++;
 

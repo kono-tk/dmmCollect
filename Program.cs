@@ -157,9 +157,9 @@ namespace dmmCollect
             // === コメント索引（全文検索用 SQLite）の作成のみ ===
             if (buildCommentIndex)
             {
-                if (mode != "video")
+                if (mode != "video" && mode != "books")
                 {
-                    Console.WriteLine("[FATAL] コメント索引は video モードでのみ使用できます。");
+                    Console.WriteLine("[FATAL] コメント索引は video / books モードでのみ使用できます。");
                     return 1;
                 }
                 return CommentCollector.BuildIndex(config, dataManager);
@@ -168,9 +168,14 @@ namespace dmmCollect
             // === コメント収集のみ（--comments-only / --comments-cid）===
             if (commentsOnly || commentsCid != null)
             {
+                if (mode == "books")
+                {
+                    // 書籍のレビューは HTTP で取れるので、ブラウザもログインも不要
+                    return await CommentCollector.RunBooksAsync(config, dataManager, commentsCid, recheckComments);
+                }
                 if (mode != "video")
                 {
-                    Console.WriteLine("[FATAL] コメント収集は video モードでのみ使用できます。");
+                    Console.WriteLine("[FATAL] コメント収集は video / books モードでのみ使用できます。");
                     return 1;
                 }
                 await using var commentScraper = new VideoScraper(new Dictionary<string, string>(), headless, 0, config.VideoDownloadDirectory, debug);
@@ -229,6 +234,9 @@ namespace dmmCollect
                         await scraper.InitializeAsync();
                         await scraper.LoginAsync(dmmId, dmmPw);
                         await scraper.ScrapeAndDownloadBooksAsync(dataManager, imageDir, 1, maxPages, contentDir);
+
+                        // ユーザーレビューの収集（確認済みはスキップ。--recheck-comments で再収集）
+                        await CommentCollector.RunBooksAsync(config, dataManager, null, recheckComments);
                     }
                     else if (mode == "dojin")
                     {
@@ -323,12 +331,14 @@ namespace dmmCollect
             Console.WriteLine("【その他】");
             Console.WriteLine("  --sync-only             スクレイピングをスキップし、コンテンツ索引の更新だけを実行します。");
             Console.WriteLine("                          ※ [video] モード。BaseDirectory\\content_index.json（cid → 実体フォルダ）を差分更新します。");
-            Console.WriteLine("  --comments-only         コンテンツ実体を持つ作品のユーザーレビュー（コメント）収集だけを実行して終了します。");
-            Console.WriteLine("                          ※ [video] モードのみ。ログイン不要。通常実行でもスクレイピング後に収集します。");
-            Console.WriteLine("                          1作品ごとに comments.json（実体フォルダ）と data.json を保存するため、");
+            Console.WriteLine("  --comments-only         ユーザーレビュー（コメント）収集だけを実行して終了します。");
+            Console.WriteLine("                          ※ [video] コンテンツ実体を持つ作品が対象。実体フォルダの comments.json に保存します。");
+            Console.WriteLine("                          ※ [books] data.json の全作品が対象。BaseDirectory\\comments\\<cid>.json に保存します。");
+            Console.WriteLine("                          ログイン不要。通常実行でもスクレイピング後に収集します。");
+            Console.WriteLine("                          1作品ごとにレビューのファイルと data.json を保存するため、");
             Console.WriteLine("                          停止しても再実行で続きから再開します。Ctrl+C か BaseDirectory に");
             Console.WriteLine("                          stop_comments.txt を置くと作品の切れ目で停止します。");
-            Console.WriteLine("  --build-comment-index   実体フォルダの comments.json から全文検索用の SQLite 索引（BaseDirectory\\comments.sqlite）を");
+            Console.WriteLine("  --build-comment-index   収集したレビューから全文検索用の SQLite 索引（BaseDirectory\\comments.sqlite）を");
             Console.WriteLine("                          作成/更新して終了します。収集時にも1作品ごとに自動更新されます。");
             Console.WriteLine("  --build-content-index   コンテンツ索引（BaseDirectory\\content_index.json。cid → 実体フォルダ）を作成/更新し、");
             Console.WriteLine("                          索引の内容（data.json に無い実体、複数フォルダの作品など）を表示して終了します。");

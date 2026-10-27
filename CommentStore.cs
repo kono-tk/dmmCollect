@@ -21,7 +21,8 @@ namespace dmmCollect
     }
 
     /// <summary>
-    /// 1作品分のレビュー収集結果。コンテンツ実体フォルダ直下の comments.json にそのまま保存する。
+    /// 1作品分のレビュー収集結果。video はコンテンツ実体フォルダ直下の comments.json、
+    /// books は BaseDirectory\comments\&lt;cid&gt;.json にそのまま保存する。
     /// dmmWin の閲覧画面もこのファイルを読むため、項目名を変える場合は両方を合わせること。
     /// </summary>
     public class ReviewCollection
@@ -41,20 +42,31 @@ namespace dmmCollect
         public const string FileName = "comments.json";
         public const int FormatVersion = 1;
 
+        /// <summary>books のレビューを置くフォルダ（BaseDirectory 直下）。書籍には作品ごとのフォルダが無いため、まとめて置く。</summary>
+        public const string BooksFolderName = "comments";
+
+        /// <summary>books の作品のレビューのファイル（BaseDirectory\comments\&lt;cid&gt;.json）。dmmWin も同じ場所を読む。</summary>
+        public static string BookCommentPath(string baseDirectory, string cid) =>
+            Path.Combine(baseDirectory, BooksFolderName, cid + ".json");
+
         private static readonly JsonSerializerOptions WriteOptions = new()
         {
             WriteIndented = true,
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         };
 
+        /// <summary>folder 直下に comments.json を書き込み、書いたパスを返す（video のコンテンツ実体フォルダ）。</summary>
+        public static string Save(string folder, ReviewCollection collection) =>
+            SaveFile(Path.Combine(folder, FileName), collection);
+
         /// <summary>
-        /// folder 直下に comments.json を書き込み、書いたパスを返す。
-        /// フォルダの更新日時は書き込み前の値へ戻す（ショートカットの日付の既定値に
-        /// フォルダの最終更新日時を使っているため、ファイルを足しただけで並びが変わるのを防ぐ）。
+        /// path に書き込み、書いたパスを返す。フォルダが無ければ作る。
+        /// フォルダの更新日時は書き込み前の値へ戻す（コンテンツ実体フォルダの日付を、ファイルを足しただけで変えないため）。
         /// </summary>
-        public static string Save(string folder, ReviewCollection collection)
+        public static string SaveFile(string path, ReviewCollection collection)
         {
-            string path = Path.Combine(folder, FileName);
+            string folder = Path.GetDirectoryName(path)!;
+            Directory.CreateDirectory(folder);
             DateTime folderMTimeUtc = Directory.GetLastWriteTimeUtc(folder);
 
             string tempPath = path + ".tmp";
