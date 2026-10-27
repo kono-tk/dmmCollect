@@ -17,7 +17,9 @@ namespace dmmCollect
     /// video はコンテンツ実体（.dcv を含むフォルダ）を持つ作品が対象で、実体フォルダの comments.json に保存する（ブラウザで取得）。
     /// books は data.json の全作品が対象で、BaseDirectory\comments\&lt;cid&gt;.json に保存する（HTTP で取得）。
     ///
-    /// ・1作品ごとに comments.json と data.json を書き込むため、途中で止まっても再実行で続きから進む。
+    /// ・1作品ごとにレビューのファイルを書き、data.json は一定件数・一定時間ごと（と終了時）にまとめて書くため、
+    ///   途中で止まっても再実行で続きから進む（強制終了した場合は、最後の書き込み以降の作品を取り直す）。
+    ///   data.json は books で 13MB あり、1作品ごとに書き直すとディスクへの負担が大きく、置き換えの失敗も起きやすい。
     ///   確認済みの作品には data.json に comments_checked_at を記録し、通常は再確認しない
     ///   （コメントが0件だった作品も確認済みとして扱う）。あわせて公式の平均評価・評価数
     ///   （rating_average / rating_count）も data.json に記録する。これらが未記録の作品は、
@@ -34,6 +36,10 @@ namespace dmmCollect
         private const string RatingCountKey = "rating_count";
         private const int DelayBetweenItemsMs = 1000;
         private const int DelayBetweenBooksMs = 500;
+
+        // data.json をまとめて書く間隔（どちらかに達したら書く）
+        private const int SaveEveryItems = 20;
+        private static readonly TimeSpan SaveInterval = TimeSpan.FromSeconds(30);
 
         /// <summary>1作品分のレビューを取得する。失敗したら null。</summary>
         private delegate Task<ReviewCollection?> ReviewFetcher(JsonObject entry, string cid, CancellationToken ct);
@@ -120,6 +126,17 @@ namespace dmmCollect
                 var stopwatch = Stopwatch.StartNew();
                 int done = 0, withComments = 0, failed = 0;
 
+                int unsaved = 0;
+                var sinceSave = Stopwatch.StartNew();
+                bool Flush()
+                {
+                    if (unsaved == 0) return true;
+                    if (!dataManager.SaveData(createBackup: false)) return false;
+                    unsaved = 0;
+                    sinceSave.Restart();
+                    return true;
+                }
+
                 foreach (var (entry, cid, path) in targets)
                 {
                     if (cts.IsCancellationRequested || File.Exists(stopFile))
@@ -159,7 +176,8 @@ namespace dmmCollect
                     entry[CountKey] = reviews.Comments.Count;
                     entry[CheckedAtKey] = reviews.CollectedAt;
                     SetRating(entry, reviews);
-                    if (!dataManager.SaveData(createBackup: false))
+                    unsaved++;
+                    if ((unsaved >= SaveEveryItems || sinceSave.Elapsed >= SaveInterval) && !Flush())
                     {
                         Console.WriteLine("[FATAL] data.json の保存に失敗したため中断します。");
                         return 1;
@@ -173,6 +191,11 @@ namespace dmmCollect
                     try { await Task.Delay(delayBetweenItemsMs, cts.Token); } catch (OperationCanceledException) { }
                 }
 
+                if (!Flush())
+                {
+                    Console.WriteLine("[FATAL] data.json の保存に失敗しました。");
+                    return 1;
+                }
                 commentIndex?.Dispose();
 
                 // 収集で増えたコメントを観点の評判・食い違いに反映する（数秒。失敗しても収集結果には影響しない）

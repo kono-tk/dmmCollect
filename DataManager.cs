@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Collections.Generic;
@@ -228,7 +229,7 @@ namespace dmmCollect
                 // 途中で止まっても data.json が壊れないよう、一時ファイルへ書いてから置き換える。
                 string tempPath = DataPath + ".tmp";
                 File.WriteAllText(tempPath, jsonString);
-                File.Move(tempPath, DataPath, overwrite: true);
+                ReplaceWithRetry(tempPath, DataPath);
 
                 _lastMTime = File.GetLastWriteTime(DataPath);
                 return true;
@@ -237,6 +238,28 @@ namespace dmmCollect
             {
                 Console.WriteLine($"Error saving data to {DataPath}: {ex.Message}");
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// 一時ファイルで置き換える。ウイルス対策ソフトや検索インデクサ、data.json を読み直す dmmWin などが
+        /// 一瞬ファイルを開いていると置き換えが「アクセス拒否」になるので、少し待って数回やり直す。
+        /// </summary>
+        private static void ReplaceWithRetry(string tempPath, string path)
+        {
+            const int attempts = 6;
+            for (int i = 1; ; i++)
+            {
+                try
+                {
+                    File.Move(tempPath, path, overwrite: true);
+                    return;
+                }
+                catch (Exception ex) when (i < attempts && ex is IOException or UnauthorizedAccessException)
+                {
+                    Console.WriteLine($"[WARNING] {Path.GetFileName(path)} を置き換えられません（{ex.Message}）。{i * 500}ms 後にやり直します（{i}/{attempts - 1}）");
+                    Thread.Sleep(i * 500);
+                }
             }
         }
 
