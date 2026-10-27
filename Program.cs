@@ -26,6 +26,7 @@ namespace dmmCollect
             bool syncOnly = false;
             string? commentsCid = null;
             bool commentsOnly = false;
+            bool samplesOnly = false;
             bool recheckComments = false;
             bool buildCommentIndex = false;
             bool buildContentIndex = false;
@@ -67,6 +68,10 @@ namespace dmmCollect
                 else if (args[i] == "--comments-only")
                 {
                     commentsOnly = true;
+                }
+                else if (args[i] == "--samples-only")
+                {
+                    samplesOnly = true;
                 }
                 else if (args[i] == "--analyze-comments")
                 {
@@ -183,6 +188,18 @@ namespace dmmCollect
                 return await CommentCollector.RunAsync(commentScraper, config, dataManager, commentsCid, recheckComments);
             }
 
+            // === サンプル画像の収集のみ（--samples-only）===
+            if (samplesOnly)
+            {
+                if (mode != "dojin")
+                {
+                    Console.WriteLine("[FATAL] サンプル画像の収集（--samples-only）は dojin モードでのみ使用できます。");
+                    return 1;
+                }
+                // 作品ページは HTTP で読めるので、ブラウザもログインも不要
+                return await DojinSampleCollector.RunAsync(config, dataManager);
+            }
+
             // === スクレイピング部 (dmmLogin) ===
             if (!syncOnly)
             {
@@ -245,6 +262,9 @@ namespace dmmCollect
                         await scraper.InitializeAsync();
                         await scraper.LoginAsync(dmmId, dmmPw);
                         await scraper.ScrapeDojinAsync(dataManager, imageDir);
+
+                        // サンプル画像の収集（確認済みはスキップするので、通常は新しい作品の分だけ）
+                        await DojinSampleCollector.RunAsync(config, dataManager);
                     }
                     else // video
                     {
@@ -338,6 +358,12 @@ namespace dmmCollect
             Console.WriteLine("                          1作品ごとにレビューのファイルと data.json を保存するため、");
             Console.WriteLine("                          停止しても再実行で続きから再開します。Ctrl+C か BaseDirectory に");
             Console.WriteLine("                          stop_comments.txt を置くと作品の切れ目で停止します。");
+            Console.WriteLine("  --samples-only          サンプル画像の収集だけを実行して終了します。");
+            Console.WriteLine("                          ※ [dojin] data.json の全作品が対象。作品ページの大きいサンプル画像を ImageDirectory\\<cid>\\ に保存し、");
+            Console.WriteLine("                          data.json に sample_images_checked_at / sample_image_count を記録します（画像の無い作品も 0 枚として記録）。");
+            Console.WriteLine("                          ログイン不要。通常実行でもスクレイピング後に新しい作品の分を収集します。");
+            Console.WriteLine("                          停止しても再実行で続きから再開します。Ctrl+C か BaseDirectory に");
+            Console.WriteLine("                          stop_samples.txt を置くと作品の切れ目で停止します。");
             Console.WriteLine("  --build-comment-index   収集したレビューから全文検索用の SQLite 索引（BaseDirectory\\comments.sqlite）を");
             Console.WriteLine("                          作成/更新して終了します。収集時にも1作品ごとに自動更新されます。");
             Console.WriteLine("  --build-content-index   コンテンツ索引（BaseDirectory\\content_index.json。cid → 実体フォルダ）を作成/更新し、");

@@ -147,6 +147,7 @@ namespace dmmCollect.Gui
             if (ChkDebug.IsChecked == true) args.Add("--debug");
             if (ChkSyncOnly.IsChecked == true) args.Add("--sync-only");
             if (ChkCommentsOnly.IsChecked == true) args.Add("--comments-only");
+            if (ChkSamplesOnly.IsChecked == true) args.Add("--samples-only");
             if (ChkRecheckComments.IsChecked == true) args.Add("--recheck-comments");
             if (ChkBuildCommentIndex.IsChecked == true) args.Add("--build-comment-index");
             if (ChkAnalyzeComments.IsChecked == true) args.Add("--analyze-comments");
@@ -296,6 +297,7 @@ namespace dmmCollect.Gui
             public bool Debug { get; set; }
             public bool SyncOnly { get; set; }
             public bool CommentsOnly { get; set; }
+            public bool SamplesOnly { get; set; }
             public bool RecheckComments { get; set; }
             public bool BuildCommentIndex { get; set; }
             public bool AnalyzeComments { get; set; }
@@ -323,6 +325,7 @@ namespace dmmCollect.Gui
                 ChkDebug.IsChecked = s.Debug;
                 ChkSyncOnly.IsChecked = s.SyncOnly;
                 ChkCommentsOnly.IsChecked = s.CommentsOnly;
+                ChkSamplesOnly.IsChecked = s.SamplesOnly;
                 ChkRecheckComments.IsChecked = s.RecheckComments;
                 ChkBuildCommentIndex.IsChecked = s.BuildCommentIndex;
                 ChkAnalyzeComments.IsChecked = s.AnalyzeComments;
@@ -350,6 +353,7 @@ namespace dmmCollect.Gui
                     Debug = ChkDebug.IsChecked == true,
                     SyncOnly = ChkSyncOnly.IsChecked == true,
                     CommentsOnly = ChkCommentsOnly.IsChecked == true,
+                    SamplesOnly = ChkSamplesOnly.IsChecked == true,
                     RecheckComments = ChkRecheckComments.IsChecked == true,
                     BuildCommentIndex = ChkBuildCommentIndex.IsChecked == true,
                     AnalyzeComments = ChkAnalyzeComments.IsChecked == true,

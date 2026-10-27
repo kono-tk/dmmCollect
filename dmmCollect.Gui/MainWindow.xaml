@@ -41,6 +41,8 @@
             <CheckBox x:Name="ChkSyncOnly" Content="sync-only（索引の更新のみ）" Margin="0,0,16,0" />
             <CheckBox x:Name="ChkCommentsOnly" Content="comments-only（コメント収集のみ）" Margin="0,0,16,0"
                       ToolTip="コンテンツ実体を持つ作品のユーザーレビューだけを収集します（video モード）。停止しても再実行で続きから再開します。" />
+            <CheckBox x:Name="ChkSamplesOnly" Content="samples-only（サンプル画像の収集のみ）" Margin="0,0,16,0"
+                      ToolTip="dojin モード。全作品のサンプル画像（大きい版）を作品ページから集めます。ログイン不要。停止しても再実行で続きから再開します。" />
             <CheckBox x:Name="ChkBuildCommentIndex" Content="build-comment-index（検索索引の作成）" Margin="0,0,16,0"
                       ToolTip="comments.json からコメント全文検索用の索引（comments.sqlite）を作成/更新して終了します。" />
             <CheckBox x:Name="ChkAnalyzeComments" Content="analyze-comments（コメント解析）" Margin="0,0,16,0"
