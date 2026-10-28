@@ -5,6 +5,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Controls;
 
 namespace dmmCollect.Gui
 {
@@ -25,7 +26,50 @@ namespace dmmCollect.Gui
 
             LoadSettings();
             Closing += (_, _) => { SaveSettings(); TryKillProcess(); CloseLogFile(); };
+
+            foreach (var radio in new[] { ModeVideo, ModeBooks, ModeDojin, ModeDlsite }) radio.Checked += (_, _) => UpdateOptionAvailability();
+            ChkAnalyzeComments.Checked += (_, _) => UpdateOptionAvailability();
+            ChkAnalyzeComments.Unchecked += (_, _) => UpdateOptionAvailability();
+            foreach (var control in OptionControls()) ToolTipService.SetShowOnDisabled(control, true);
+            UpdateOptionAvailability();
         }
+
+        // ===== モードによるオプションの有効/無効 =====
+
+        private string SelectedMode =>
+            ModeBooks.IsChecked == true ? "books"
+            : ModeDojin.IsChecked == true ? "dojin"
+            : ModeDlsite.IsChecked == true ? "dlsite"
+            : "video";
+
+        private IEnumerable<Control> OptionControls() => new Control[]
+        {
+            PagesBox, ChkSyncOnly, ChkCommentsOnly, ChkSamplesOnly, ChkRecheckComments,
+            ChkBuildCommentIndex, ChkAnalyzeComments, ChkVerifyLlm,
+        };
+
+        /// <summary>
+        /// そのモードで使われないオプションを選べなくする（dmmCollect の Program.cs でモードを確かめている箇所に合わせる）。
+        /// チェックは外さないので、モードを戻せば元の状態で使える。無効なオプションは BuildArgs で渡さない。
+        /// headful / debug はどのモードでも使う。
+        /// </summary>
+        private void UpdateOptionAvailability()
+        {
+            string mode = SelectedMode;
+            bool video = mode == "video";
+            bool videoOrBooks = video || mode == "books";
+
+            PagesBox.IsEnabled = mode == "books";                 // 取得ページ数は書籍の本棚の巡回だけで使う
+            ChkSyncOnly.IsEnabled = video;                        // コンテンツ索引は video にしか無い
+            ChkCommentsOnly.IsEnabled = videoOrBooks;
+            ChkRecheckComments.IsEnabled = videoOrBooks;
+            ChkBuildCommentIndex.IsEnabled = videoOrBooks;
+            ChkAnalyzeComments.IsEnabled = video;
+            ChkVerifyLlm.IsEnabled = video && ChkAnalyzeComments.IsChecked == true;   // analyze-comments の確認にだけ使う
+            ChkSamplesOnly.IsEnabled = mode == "dojin";
+        }
+
+        private static bool IsOn(CheckBox box) => box.IsEnabled && box.IsChecked == true;
 
         // ===== 実行 =====
 
@@ -129,15 +173,12 @@ namespace dmmCollect.Gui
         {
             var args = new List<string>();
 
-            string mode = ModeBooks.IsChecked == true ? "books"
-                        : ModeDojin.IsChecked == true ? "dojin"
-                        : ModeDlsite.IsChecked == true ? "dlsite"
-                        : "video";
             args.Add("--mode");
-            args.Add(mode);
+            args.Add(SelectedMode);
 
+            // 無効（そのモードで使われない）オプションは、チェックが残っていても渡さない
             string pages = PagesBox.Text.Trim();
-            if (!string.IsNullOrEmpty(pages))
+            if (PagesBox.IsEnabled && !string.IsNullOrEmpty(pages))
             {
                 args.Add("-p");
                 args.Add(pages);
@@ -145,14 +186,13 @@ namespace dmmCollect.Gui
 
             if (ChkHeadful.IsChecked == true) args.Add("--headful");
             if (ChkDebug.IsChecked == true) args.Add("--debug");
-            // video 以外ではディスエイブルになる。チェックは残る（video に戻したとき復元する）ので、渡さない
-            if (ChkSyncOnly.IsChecked == true && mode == "video") args.Add("--sync-only");
-            if (ChkCommentsOnly.IsChecked == true) args.Add("--comments-only");
-            if (ChkSamplesOnly.IsChecked == true) args.Add("--samples-only");
-            if (ChkRecheckComments.IsChecked == true) args.Add("--recheck-comments");
-            if (ChkBuildCommentIndex.IsChecked == true) args.Add("--build-comment-index");
-            if (ChkAnalyzeComments.IsChecked == true) args.Add("--analyze-comments");
-            if (ChkVerifyLlm.IsChecked == true) args.Add("--verify-llm");
+            if (IsOn(ChkSyncOnly)) args.Add("--sync-only");
+            if (IsOn(ChkCommentsOnly)) args.Add("--comments-only");
+            if (IsOn(ChkSamplesOnly)) args.Add("--samples-only");
+            if (IsOn(ChkRecheckComments)) args.Add("--recheck-comments");
+            if (IsOn(ChkBuildCommentIndex)) args.Add("--build-comment-index");
+            if (IsOn(ChkAnalyzeComments)) args.Add("--analyze-comments");
+            if (IsOn(ChkVerifyLlm)) args.Add("--verify-llm");
 
             return args;
         }

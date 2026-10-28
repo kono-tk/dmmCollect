@@ -31,30 +31,28 @@
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0" Text="ページ数(books):" VerticalAlignment="Center" Margin="0,0,4,0" />
             <TextBox x:Name="PagesBox" Grid.Column="1" Text="1" VerticalAlignment="Center"
-                     ToolTip="books モードの最大取得ページ数。0 で全ページ。" />
+                     ToolTip="books モード専用。最大取得ページ数。0 で全ページ。" />
         </Grid>
 
         <!-- フラグ -->
         <WrapPanel Grid.Row="2" Margin="70,0,0,8">
             <CheckBox x:Name="ChkHeadful" Content="headful（ブラウザ表示）" Margin="0,0,16,0" />
             <CheckBox x:Name="ChkDebug" Content="debug（詳細ログ）" Margin="0,0,16,0" />
-            <!-- 索引（content_index.json）は video モードにしか無いので、video 以外では選べなくする -->
+            <!-- モードによって使われないオプションは選べなくする（MainWindow.xaml.cs の UpdateOptionAvailability） -->
             <CheckBox x:Name="ChkSyncOnly" Content="sync-only（索引の更新のみ）" Margin="0,0,16,0"
-                      IsEnabled="{Binding IsChecked, ElementName=ModeVideo}"
-                      ToolTip="video モード専用。スクレイピングをせず、コンテンツ索引の更新（フォルダ名の変更などの反映）だけを行います。"
-                      ToolTipService.ShowOnDisabled="True" />
+                      ToolTip="video モード専用。スクレイピングをせず、コンテンツ索引の更新（フォルダ名の変更などの反映）だけを行います。" />
             <CheckBox x:Name="ChkCommentsOnly" Content="comments-only（コメント収集のみ）" Margin="0,0,16,0"
-                      ToolTip="コンテンツ実体を持つ作品のユーザーレビューだけを収集します（video モード）。停止しても再実行で続きから再開します。" />
+                      ToolTip="video / books モード。ユーザーレビューだけを収集します（video はコンテンツ実体を持つ作品）。停止しても再実行で続きから再開します。" />
             <CheckBox x:Name="ChkSamplesOnly" Content="samples-only（サンプル画像の収集のみ）" Margin="0,0,16,0"
-                      ToolTip="dojin モード。全作品のサンプル画像（大きい版）を作品ページから集めます。ログイン不要。停止しても再実行で続きから再開します。" />
+                      ToolTip="dojin モード専用。全作品のサンプル画像（大きい版）を作品ページから集めます。ログイン不要。停止しても再実行で続きから再開します。" />
             <CheckBox x:Name="ChkBuildCommentIndex" Content="build-comment-index（検索索引の作成）" Margin="0,0,16,0"
-                      ToolTip="comments.json からコメント全文検索用の索引（comments.sqlite）を作成/更新して終了します。" />
+                      ToolTip="video / books モード。comments.json からコメント全文検索用の索引（comments.sqlite）を作成/更新して終了します。" />
             <CheckBox x:Name="ChkAnalyzeComments" Content="analyze-comments（コメント解析）" Margin="0,0,16,0"
-                      ToolTip="コメントから観点の評判（演技が好評など）と、星評価と本文の食い違いを求めて data.json に書き込みます（数秒）。" />
+                      ToolTip="video モード専用。コメントから観点の評判（演技が好評など）と、星評価と本文の食い違いを求めて data.json に書き込みます（数秒）。" />
             <CheckBox x:Name="ChkVerifyLlm" Content="verify-llm（食い違いをLLMで確認）" Margin="0,0,16,0"
-                      ToolTip="analyze-comments と併用。食い違いの候補をローカルLLM（ollama）で確認して絞り込みます。" />
+                      ToolTip="video モードで analyze-comments と併用。食い違いの候補をローカルLLM（ollama）で確認して絞り込みます。" />
             <CheckBox x:Name="ChkRecheckComments" Content="recheck-comments（コメント再収集）"
-                      ToolTip="確認済みの作品もコメントを再収集します（更新確認用）。" />
+                      ToolTip="video / books モード。確認済みの作品もコメントを再収集します（更新確認用）。" />
         </WrapPanel>
 
         <!-- 実行 / 停止 -->
