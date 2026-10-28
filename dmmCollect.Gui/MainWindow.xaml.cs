@@ -145,7 +145,8 @@ namespace dmmCollect.Gui
 
             if (ChkHeadful.IsChecked == true) args.Add("--headful");
             if (ChkDebug.IsChecked == true) args.Add("--debug");
-            if (ChkSyncOnly.IsChecked == true) args.Add("--sync-only");
+            // video 以外ではディスエイブルになる。チェックは残る（video に戻したとき復元する）ので、渡さない
+            if (ChkSyncOnly.IsChecked == true && mode == "video") args.Add("--sync-only");
             if (ChkCommentsOnly.IsChecked == true) args.Add("--comments-only");
             if (ChkSamplesOnly.IsChecked == true) args.Add("--samples-only");
             if (ChkRecheckComments.IsChecked == true) args.Add("--recheck-comments");

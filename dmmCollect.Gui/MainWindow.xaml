@@ -38,7 +38,11 @@
         <WrapPanel Grid.Row="2" Margin="70,0,0,8">
             <CheckBox x:Name="ChkHeadful" Content="headful（ブラウザ表示）" Margin="0,0,16,0" />
             <CheckBox x:Name="ChkDebug" Content="debug（詳細ログ）" Margin="0,0,16,0" />
-            <CheckBox x:Name="ChkSyncOnly" Content="sync-only（索引の更新のみ）" Margin="0,0,16,0" />
+            <!-- 索引（content_index.json）は video モードにしか無いので、video 以外では選べなくする -->
+            <CheckBox x:Name="ChkSyncOnly" Content="sync-only（索引の更新のみ）" Margin="0,0,16,0"
+                      IsEnabled="{Binding IsChecked, ElementName=ModeVideo}"
+                      ToolTip="video モード専用。スクレイピングをせず、コンテンツ索引の更新（フォルダ名の変更などの反映）だけを行います。"
+                      ToolTipService.ShowOnDisabled="True" />
             <CheckBox x:Name="ChkCommentsOnly" Content="comments-only（コメント収集のみ）" Margin="0,0,16,0"
                       ToolTip="コンテンツ実体を持つ作品のユーザーレビューだけを収集します（video モード）。停止しても再実行で続きから再開します。" />
             <CheckBox x:Name="ChkSamplesOnly" Content="samples-only（サンプル画像の収集のみ）" Margin="0,0,16,0"

@@ -115,6 +115,13 @@ namespace dmmCollect
 
             Console.WriteLine($"=== dmmCollect (C# 統合版) 起動 (Mode: {mode}) ===");
 
+            // sync-only が更新するコンテンツ索引は video モードにしか無い（data.json のバックアップも作らないよう、ここで止める）
+            if (syncOnly && mode != "video")
+            {
+                Console.WriteLine("[FATAL] sync-only は video モード専用です。");
+                return 1;
+            }
+
             var scriptDir = AppDomain.CurrentDomain.BaseDirectory;
             ConfigManager config;
             try
@@ -349,7 +356,7 @@ namespace dmmCollect
             Console.WriteLine("                          ※ 全モードで有効");
             Console.WriteLine();
             Console.WriteLine("【その他】");
-            Console.WriteLine("  --sync-only             スクレイピングをスキップし、コンテンツ索引の更新だけを実行します。");
+            Console.WriteLine("  --sync-only             スクレイピングをスキップし、コンテンツ索引の更新だけを実行します（video モード専用）。");
             Console.WriteLine("                          ※ [video] モード。BaseDirectory\\content_index.json（cid → 実体フォルダ）を差分更新します。");
             Console.WriteLine("  --comments-only         ユーザーレビュー（コメント）収集だけを実行して終了します。");
             Console.WriteLine("                          ※ [video] コンテンツ実体を持つ作品が対象。実体フォルダの comments.json に保存します。");
