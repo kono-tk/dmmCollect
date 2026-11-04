@@ -44,7 +44,7 @@ namespace dmmCollect.Gui
 
         private IEnumerable<Control> OptionControls() => new Control[]
         {
-            PagesBox, ChkSyncOnly, ChkCommentsOnly, ChkSamplesOnly, ChkRecheckComments,
+            PagesBox, ChkSyncOnly, ChkCommentsOnly, ChkSamplesOnly, ChkGamesOnly, ChkRecheckComments,
             ChkBuildCommentIndex, ChkAnalyzeComments, ChkVerifyLlm,
         };
 
@@ -67,6 +67,7 @@ namespace dmmCollect.Gui
             ChkAnalyzeComments.IsEnabled = video;
             ChkVerifyLlm.IsEnabled = video && ChkAnalyzeComments.IsChecked == true;   // analyze-comments の確認にだけ使う
             ChkSamplesOnly.IsEnabled = mode == "dojin";
+            ChkGamesOnly.IsEnabled = mode == "dojin";
         }
 
         private static bool IsOn(CheckBox box) => box.IsEnabled && box.IsChecked == true;
@@ -189,6 +190,7 @@ namespace dmmCollect.Gui
             if (IsOn(ChkSyncOnly)) args.Add("--sync-only");
             if (IsOn(ChkCommentsOnly)) args.Add("--comments-only");
             if (IsOn(ChkSamplesOnly)) args.Add("--samples-only");
+            if (IsOn(ChkGamesOnly)) args.Add("--games-only");
             if (IsOn(ChkRecheckComments)) args.Add("--recheck-comments");
             if (IsOn(ChkBuildCommentIndex)) args.Add("--build-comment-index");
             if (IsOn(ChkAnalyzeComments)) args.Add("--analyze-comments");
@@ -339,6 +341,7 @@ namespace dmmCollect.Gui
             public bool SyncOnly { get; set; }
             public bool CommentsOnly { get; set; }
             public bool SamplesOnly { get; set; }
+            public bool GamesOnly { get; set; }
             public bool RecheckComments { get; set; }
             public bool BuildCommentIndex { get; set; }
             public bool AnalyzeComments { get; set; }
@@ -367,6 +370,7 @@ namespace dmmCollect.Gui
                 ChkSyncOnly.IsChecked = s.SyncOnly;
                 ChkCommentsOnly.IsChecked = s.CommentsOnly;
                 ChkSamplesOnly.IsChecked = s.SamplesOnly;
+                ChkGamesOnly.IsChecked = s.GamesOnly;
                 ChkRecheckComments.IsChecked = s.RecheckComments;
                 ChkBuildCommentIndex.IsChecked = s.BuildCommentIndex;
                 ChkAnalyzeComments.IsChecked = s.AnalyzeComments;
@@ -395,6 +399,7 @@ namespace dmmCollect.Gui
                     SyncOnly = ChkSyncOnly.IsChecked == true,
                     CommentsOnly = ChkCommentsOnly.IsChecked == true,
                     SamplesOnly = ChkSamplesOnly.IsChecked == true,
+                    GamesOnly = ChkGamesOnly.IsChecked == true,
                     RecheckComments = ChkRecheckComments.IsChecked == true,
                     BuildCommentIndex = ChkBuildCommentIndex.IsChecked == true,
                     AnalyzeComments = ChkAnalyzeComments.IsChecked == true,

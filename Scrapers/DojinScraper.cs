@@ -267,6 +267,42 @@ namespace dmmCollect.Scrapers
             Console.WriteLine("--- Dojinモード完了 ---");
         }
 
+        /// <summary>ライブラリのダウンロード URL。開くとファイル（ゲームは {cid}.zip が1つ）のダウンロードが始まる。</summary>
+        public static string DownloadUrl(string cid) =>
+            $"https://www.dmm.co.jp/dc/-/proxy/=/transfer_type=download/shop=doujin/product_id={cid}/";
+
+        /// <summary>
+        /// 作品のファイルをダウンロードして saveDir に保存し、保存したパスを返す（ファイル名はサーバーが付けたもの）。
+        /// ログイン済みであること。ダウンロードが始まらない（購入していない等）・途中で失敗した場合は例外。
+        /// </summary>
+        public async Task<string> DownloadProductAsync(string cid, string saveDir)
+        {
+            if (Page == null) throw new InvalidOperationException("Page is not initialized.");
+
+            var download = await Page.RunAndWaitForDownloadAsync(async () =>
+            {
+                try
+                {
+                    await Page.GotoAsync(DownloadUrl(cid));
+                }
+                catch
+                {
+                    // ダウンロードが始まると遷移は「Download is starting」で中断される
+                }
+            }, new() { Timeout = 120000 });
+
+            // 完了まで待つ（Playwright の一時フォルダに書かれる）
+            string? failure = await download.FailureAsync();
+            if (failure != null) throw new IOException($"ダウンロードに失敗しました: {failure}");
+
+            string name = string.IsNullOrWhiteSpace(download.SuggestedFilename) ? $"{cid}.zip" : FileSanitizer.SanitizeFilename(download.SuggestedFilename);
+            Directory.CreateDirectory(saveDir);
+            string path = Path.Combine(saveDir, name);
+            await download.SaveAsAsync(path);
+            await download.DeleteAsync();
+            return path;
+        }
+
         private async Task<Dictionary<string, object>?> ScrapeDojinDetailPageAsync(string detailUrl)
         {
             try

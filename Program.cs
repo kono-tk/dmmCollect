@@ -27,6 +27,7 @@ namespace dmmCollect
             string? commentsCid = null;
             bool commentsOnly = false;
             bool samplesOnly = false;
+            bool gamesOnly = false;
             bool recheckComments = false;
             bool buildCommentIndex = false;
             bool buildContentIndex = false;
@@ -72,6 +73,10 @@ namespace dmmCollect
                 else if (args[i] == "--samples-only")
                 {
                     samplesOnly = true;
+                }
+                else if (args[i] == "--games-only")
+                {
+                    gamesOnly = true;
                 }
                 else if (args[i] == "--analyze-comments")
                 {
@@ -207,6 +212,28 @@ namespace dmmCollect
                 return await DojinSampleCollector.RunAsync(config, dataManager);
             }
 
+            // === ゲームのダウンロードのみ（--games-only）===
+            if (gamesOnly)
+            {
+                if (mode != "dojin")
+                {
+                    Console.WriteLine("[FATAL] ゲームのダウンロード（--games-only）は dojin モードでのみ使用できます。");
+                    return 1;
+                }
+                string? gameId = Environment.GetEnvironmentVariable("DMM_LOGIN_ID");
+                string? gamePw = Environment.GetEnvironmentVariable("DMM_PASSWORD");
+                if (string.IsNullOrEmpty(gameId) || string.IsNullOrEmpty(gamePw))
+                {
+                    Console.WriteLine("[FATAL] 環境変数 DMM_LOGIN_ID と DMM_PASSWORD を設定してください。");
+                    return 1;
+                }
+                // ライブラリからのダウンロードは購入者だけができるので、ブラウザでログインする
+                await using var gameScraper = new DojinScraper(DmmUrls(config, mode), headless, 0, debug);
+                await gameScraper.InitializeAsync();
+                await gameScraper.LoginAsync(gameId, gamePw);
+                return await DojinGameCollector.RunAsync(gameScraper, config, dataManager);
+            }
+
             // === スクレイピング部 (dmmLogin) ===
             if (!syncOnly)
             {
@@ -241,15 +268,7 @@ namespace dmmCollect
                         return 1;
                     }
 
-                    var urls = new Dictionary<string, string>
-                    {
-                        ["age_check"] = config.Config.login.urls.age_check ?? "https://www.dmm.co.jp/age_check/=/?rurl=https%3A%2F%2Fwww.dmm.co.jp%2Ftop%2F",
-                        ["top"] = config.Config.login.urls.top ?? "https://www.dmm.co.jp/top/",
-                        ["login_page"] = config.Config.login.urls.login_page ?? "https://accounts.dmm.co.jp/service/login/password/=/path=https%3A%2F%2Fwww.dmm.co.jp%2Ftop%2F",
-                        ["my_library_search"] = config.Config.login.urls.my_library_search ?? "https://www.dmm.co.jp/digital/-/mylibrary/search/",
-                        ["detail_page_base"] = config.Config.login.urls.detail_page_base ?? "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid={cid}/",
-                        ["library_url"] = config.Config.books.library_url ?? "https://book.dmm.co.jp/shelf/?tab=library&page={page_num}"
-                    };
+                    var urls = DmmUrls(config, mode);
 
                     if (mode == "books")
                     {
@@ -264,7 +283,6 @@ namespace dmmCollect
                     }
                     else if (mode == "dojin")
                     {
-                        urls["library_url"] = config.Config.dojin.library_url ?? "https://www.dmm.co.jp/dc/-/mylibrary/";
                         await using var scraper = new DojinScraper(urls, headless, 500, debug);
                         await scraper.InitializeAsync();
                         await scraper.LoginAsync(dmmId, dmmPw);
@@ -272,6 +290,9 @@ namespace dmmCollect
 
                         // サンプル画像の収集（確認済みはスキップするので、通常は新しい作品の分だけ）
                         await DojinSampleCollector.RunAsync(config, dataManager);
+
+                        // ゲームのダウンロードと展開（ダウンロード済みはスキップするので、通常は新しい作品の分だけ）
+                        await DojinGameCollector.RunAsync(scraper, config, dataManager);
                     }
                     else // video
                     {
@@ -340,6 +361,19 @@ namespace dmmCollect
             return 0;
         }
 
+        /// <summary>DMM のログインとライブラリの URL（設定ファイルに無ければ既定値）。library_url はモードごとに違う。</summary>
+        private static Dictionary<string, string> DmmUrls(ConfigManager config, string mode) => new()
+        {
+            ["age_check"] = config.Config.login.urls.age_check ?? "https://www.dmm.co.jp/age_check/=/?rurl=https%3A%2F%2Fwww.dmm.co.jp%2Ftop%2F",
+            ["top"] = config.Config.login.urls.top ?? "https://www.dmm.co.jp/top/",
+            ["login_page"] = config.Config.login.urls.login_page ?? "https://accounts.dmm.co.jp/service/login/password/=/path=https%3A%2F%2Fwww.dmm.co.jp%2Ftop%2F",
+            ["my_library_search"] = config.Config.login.urls.my_library_search ?? "https://www.dmm.co.jp/digital/-/mylibrary/search/",
+            ["detail_page_base"] = config.Config.login.urls.detail_page_base ?? "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid={cid}/",
+            ["library_url"] = mode == "dojin"
+                ? config.Config.dojin.library_url ?? "https://www.dmm.co.jp/dc/-/mylibrary/"
+                : config.Config.books.library_url ?? "https://book.dmm.co.jp/shelf/?tab=library&page={page_num}"
+        };
+
         private static void ShowHelp()
         {
             Console.WriteLine("使用方法: dmmCollect.exe [オプション]");
@@ -371,7 +405,13 @@ namespace dmmCollect
             Console.WriteLine("                          ログイン不要。通常実行でもスクレイピング後に新しい作品の分を収集します。");
             Console.WriteLine("                          停止しても再実行で続きから再開します。Ctrl+C か BaseDirectory に");
             Console.WriteLine("                          stop_samples.txt を置くと作品の切れ目で停止します。");
-            Console.WriteLine("  --build-comment-index   収集したレビューから全文検索用の SQLite 索引（BaseDirectory\\comments.sqlite）を");
+            Console.WriteLine("  --games-only            ゲームのダウンロードだけを実行して終了します。");
+            Console.WriteLine("                          ※ [dojin] 形式が「ゲーム」の作品が対象。ライブラリから zip をダウンロードして");
+            Console.WriteLine("                          BaseDirectory\\games\\<作品名_cid>\\ に展開し（zip は消す）、data.json に game_folder /");
+            Console.WriteLine("                          game_downloaded_at を記録します。ログインが必要。通常実行でも新しい作品の分をダウンロードします。");
+            Console.WriteLine("                          1作品ごとに data.json を保存するため、停止しても再実行で続きから再開します。");
+            Console.WriteLine("                          Ctrl+C か BaseDirectory に stop_games.txt を置くと作品の切れ目で停止します。");
+            Console.WriteLine("  --build-comment-index  収集したレビューから全文検索用の SQLite 索引（BaseDirectory\\comments.sqlite）を");
             Console.WriteLine("                          作成/更新して終了します。収集時にも1作品ごとに自動更新されます。");
             Console.WriteLine("  --build-content-index   コンテンツ索引（BaseDirectory\\content_index.json。cid → 実体フォルダ）を作成/更新し、");
             Console.WriteLine("                          索引の内容（data.json に無い実体、複数フォルダの作品など）を表示して終了します。");

@@ -45,6 +45,8 @@
                       ToolTip="video / books モード。ユーザーレビューだけを収集します（video はコンテンツ実体を持つ作品）。停止しても再実行で続きから再開します。" />
             <CheckBox x:Name="ChkSamplesOnly" Content="samples-only（サンプル画像の収集のみ）" Margin="0,0,16,0"
                       ToolTip="dojin モード専用。全作品のサンプル画像（大きい版）を作品ページから集めます。ログイン不要。停止しても再実行で続きから再開します。" />
+            <CheckBox x:Name="ChkGamesOnly" Content="games-only（ゲームのダウンロードのみ）" Margin="0,0,16,0"
+                      ToolTip="dojin モード専用。形式が「ゲーム」の作品を zip でダウンロードし、BaseDirectory\games\&lt;作品名_cid&gt;\ に展開します。ログインが必要。停止しても再実行で続きから再開します。" />
             <CheckBox x:Name="ChkBuildCommentIndex" Content="build-comment-index（検索索引の作成）" Margin="0,0,16,0"
                       ToolTip="video / books モード。comments.json からコメント全文検索用の索引（comments.sqlite）を作成/更新して終了します。" />
             <CheckBox x:Name="ChkAnalyzeComments" Content="analyze-comments（コメント解析）" Margin="0,0,16,0"
