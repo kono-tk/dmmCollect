@@ -10,12 +10,16 @@ namespace dmmCollect
     /// <summary>ユーザーレビュー1件（コメント付きのもの）。</summary>
     public class ReviewComment
     {
+        /// <summary>サイトのレビュー id（video の API で取得したもの。差分取得で既知のレビューを見分ける）。books と古いファイルには無い。</summary>
+        [JsonPropertyName("id")][JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public string Id { get; set; } = "";
         [JsonPropertyName("rating")] public int Rating { get; set; }
         [JsonPropertyName("title")] public string Title { get; set; } = "";
         [JsonPropertyName("body")] public string Body { get; set; } = "";
         [JsonPropertyName("reviewer")] public string Reviewer { get; set; } = "";
         [JsonPropertyName("reviewer_url")] public string ReviewerUrl { get; set; } = "";
         [JsonPropertyName("date")] public string Date { get; set; } = "";
+        /// <summary>投稿日時（ISO 8601、秒まで。video の API で取得したもの）。books と古いファイルには無い。</summary>
+        [JsonPropertyName("published_at")][JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public string PublishedAt { get; set; } = "";
         [JsonPropertyName("purchased")] public bool Purchased { get; set; }
         [JsonPropertyName("helpful_count")] public int HelpfulCount { get; set; }
     }
@@ -40,7 +44,8 @@ namespace dmmCollect
     public static class CommentStore
     {
         public const string FileName = "comments.json";
-        public const int FormatVersion = 1;
+        /// <summary>2: video のレビューが id と published_at を持ち、新着順に並ぶ（差分取得に対応）。</summary>
+        public const int FormatVersion = 2;
 
         /// <summary>books のレビューを置くフォルダ（BaseDirectory 直下）。書籍には作品ごとのフォルダが無いため、まとめて置く。</summary>
         public const string BooksFolderName = "comments";
@@ -63,6 +68,20 @@ namespace dmmCollect
         /// path に書き込み、書いたパスを返す。フォルダが無ければ作る。
         /// フォルダの更新日時は書き込み前の値へ戻す（コンテンツ実体フォルダの日付を、ファイルを足しただけで変えないため）。
         /// </summary>
+        /// <summary>保存済みのレビューのファイルを読む。無い・読めない場合は null。</summary>
+        public static ReviewCollection? Load(string path)
+        {
+            try
+            {
+                return File.Exists(path) ? JsonSerializer.Deserialize<ReviewCollection>(File.ReadAllText(path)) : null;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[WARNING] レビューのファイルを読めません（取り直します）: {path} ({ex.Message})");
+                return null;
+            }
+        }
+
         public static string SaveFile(string path, ReviewCollection collection)
         {
             string folder = Path.GetDirectoryName(path)!;

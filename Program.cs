@@ -195,9 +195,8 @@ namespace dmmCollect
                     Console.WriteLine("[FATAL] コメント収集は video / books モードでのみ使用できます。");
                     return 1;
                 }
-                await using var commentScraper = new VideoScraper(new Dictionary<string, string>(), headless, 0, config.VideoDownloadDirectory, debug);
-                await commentScraper.InitializeAsync();
-                return await CommentCollector.RunAsync(commentScraper, config, dataManager, commentsCid, recheckComments);
+                // 動画のレビューも API で取れるので、ブラウザもログインも不要
+                return await CommentCollector.RunAsync(config, dataManager, commentsCid, recheckComments);
             }
 
             // === サンプル画像の収集のみ（--samples-only）===
@@ -322,7 +321,7 @@ namespace dmmCollect
                         await scraper.CollectRelatedTagsBatchAsync(dataManager);
 
                         // コンテンツ実体を持つ作品のユーザーレビュー収集（確認済みはスキップ。--recheck-comments で再収集）
-                        await CommentCollector.RunAsync(scraper, config, dataManager, null, recheckComments);
+                        await CommentCollector.RunAsync(config, dataManager, null, recheckComments);
                     }
                 }
 

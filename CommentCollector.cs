@@ -14,7 +14,7 @@ namespace dmmCollect
 {
     /// <summary>
     /// ユーザーレビューを順に収集する。
-    /// video はコンテンツ実体（.dcv を含むフォルダ）を持つ作品が対象で、実体フォルダの comments.json に保存する（ブラウザで取得）。
+    /// video はコンテンツ実体（.dcv を含むフォルダ）を持つ作品が対象で、実体フォルダの comments.json に保存する（レビュー API で取得）。
     /// books は data.json の全作品が対象で、BaseDirectory\comments\&lt;cid&gt;.json に保存する（HTTP で取得）。
     ///
     /// ・1作品ごとにレビューのファイルを書き、data.json は一定件数・一定時間ごと（と終了時）にまとめて書くため、
@@ -34,7 +34,7 @@ namespace dmmCollect
         private const string CountKey = "comment_count";
         private const string RatingAverageKey = "rating_average";
         private const string RatingCountKey = "rating_count";
-        private const int DelayBetweenItemsMs = 1000;
+        private const int DelayBetweenItemsMs = 500;
         private const int DelayBetweenBooksMs = 500;
 
         // data.json をまとめて書く間隔（どちらかに達したら書く）
@@ -42,18 +42,27 @@ namespace dmmCollect
         private static readonly TimeSpan SaveInterval = TimeSpan.FromSeconds(30);
 
         /// <summary>1作品分のレビューを取得する。失敗したら null。</summary>
-        private delegate Task<ReviewCollection?> ReviewFetcher(JsonObject entry, string cid, CancellationToken ct);
+        private delegate Task<ReviewCollection?> ReviewFetcher(JsonObject entry, string cid, string path, CancellationToken ct);
 
-        /// <summary>video: コンテンツ実体を持つ作品のレビューを、ブラウザで作品ページから収集する。</summary>
-        public static Task<int> RunAsync(VideoScraper scraper, ConfigManager config, DataManager dataManager, string? onlyCid, bool recheck) =>
+        /// <summary>
+        /// video: コンテンツ実体を持つ作品のレビューを、動画サイトのレビュー API から収集する（ブラウザ・ログイン不要）。
+        /// 保存済みの comments.json があれば差分取得し、recheck なら全件を取り直す（「参考になった」数も新しくなる）。
+        /// </summary>
+        public static Task<int> RunAsync(ConfigManager config, DataManager dataManager, string? onlyCid, bool recheck) =>
             RunCoreAsync(config, dataManager, onlyCid, recheck,
-                (entry, cid, _) => scraper.FetchReviewsForItemAsync(cid, VideoFloor.FromUrl(entry["detail_url"]?.ToString())),
+                async (entry, cid, path, ct) =>
+                {
+                    var fetched = await VideoReviewClient.FetchAsync(cid, VideoFloor.FromUrl(entry["detail_url"]?.ToString()),
+                                                                     CommentStore.Load(path), full: recheck, ct);
+                    if (fetched != null && !fetched.Full) Console.WriteLine($"  （差分取得: 新着 {fetched.Added} 件）");
+                    return fetched?.Collection;
+                },
                 DelayBetweenItemsMs, analyze: true);
 
         /// <summary>books: data.json の全作品のレビューを、書籍サイトのレビュー API から収集する（ブラウザ・ログイン不要）。</summary>
         public static Task<int> RunBooksAsync(ConfigManager config, DataManager dataManager, string? onlyCid, bool recheck) =>
             RunCoreAsync(config, dataManager, onlyCid, recheck,
-                (entry, cid, ct) => BookReviewClient.FetchAsync(cid, entry["detail_url"]?.ToString() ?? "", ct),
+                (entry, cid, _, ct) => BookReviewClient.FetchAsync(cid, entry["detail_url"]?.ToString() ?? "", ct),
                 DelayBetweenBooksMs, analyze: false);
 
         private static async Task<int> RunCoreAsync(ConfigManager config, DataManager dataManager, string? onlyCid, bool recheck,
@@ -90,7 +99,7 @@ namespace dmmCollect
                 CommentIndex? commentIndex = OpenIndex(config);
 
                 // 展開せずに収集した古いデータ（ネタバレレビューが注意書きだけ）を持つ作品は、確認済みでも取り直す
-                var collapsed = commentIndex?.FindCidsWithCollapsedSpoilers(VideoScraper.SpoilerPlaceholder) ?? new HashSet<string>();
+                var collapsed = commentIndex?.FindCidsWithCollapsedSpoilers(VideoReviewClient.SpoilerPlaceholder) ?? new HashSet<string>();
                 if (collapsed.Count > 0)
                 {
                     Console.WriteLine($"ネタバレレビューの全文が未取得の作品: {collapsed.Count} 件（確認済みでも取り直します）");
@@ -152,7 +161,7 @@ namespace dmmCollect
                     ReviewCollection? reviews;
                     try
                     {
-                        reviews = await fetch(entry, cid, cts.Token);
+                        reviews = await fetch(entry, cid, path, cts.Token);
                     }
                     catch (OperationCanceledException)
                     {
