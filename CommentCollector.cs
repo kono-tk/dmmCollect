@@ -25,6 +25,7 @@ namespace dmmCollect
     ///   （rating_average / rating_count）も data.json に記録する。これらが未記録の作品は、
     ///   確認済みでも一度だけ再取得する。
     /// ・recheck=true なら確認済みの作品も再収集する（コメントの更新用）。
+    ///   video でコメント0件だった作品は、確認から30日経っていれば recheck なしでも確認し直す。
     /// ・停止は Ctrl+C か、BaseDirectory に stop_comments.txt を置く。どちらも作品の切れ目で止まる。
     /// </summary>
     public static class CommentCollector
@@ -35,6 +36,9 @@ namespace dmmCollect
         private const string RatingAverageKey = "rating_average";
         private const string RatingCountKey = "rating_count";
         private const int DelayBetweenItemsMs = 500;
+
+        // video でコメント0件だった作品を確認し直す間隔
+        private static readonly TimeSpan ZeroRecheckInterval = TimeSpan.FromDays(30);
         private const int DelayBetweenBooksMs = 500;
 
         // data.json をまとめて書く間隔（どちらかに達したら書く）
@@ -113,7 +117,7 @@ namespace dmmCollect
                     if (cid.Length == 0 || !pathByCid.TryGetValue(cid, out var path)) continue;
                     if (onlyCid != null && cid != onlyCid) continue;
                     if (!recheck && onlyCid == null && entry[CheckedAtKey] != null && entry[RatingCountKey] != null
-                        && !collapsed.Contains(cid))
+                        && !collapsed.Contains(cid) && !(analyze && IsStaleEmpty(entry)))
                     {
                         skipped++;
                         continue;
@@ -222,6 +226,17 @@ namespace dmmCollect
                 Console.CancelKeyPress -= onCancel;
             }
         }
+
+        /// <summary>
+        /// video で、前回の確認ではコメント0件で、確認から ZeroRecheckInterval 以上経った作品。
+        /// 0件の作品は comments.json が無く dmmWin では差分取得の対象にならないため、収集のたびに古いものを確認し直す
+        /// （レビュー API なら1作品0.2秒ほど）。
+        /// </summary>
+        private static bool IsStaleEmpty(JsonObject entry) =>
+            (entry[CountKey]?.GetValue<int>() ?? 0) == 0
+            && DateTimeOffset.TryParse(entry[CheckedAtKey]?.ToString(), System.Globalization.CultureInfo.InvariantCulture,
+                                       System.Globalization.DateTimeStyles.None, out var checkedAt)
+            && DateTimeOffset.Now - checkedAt >= ZeroRecheckInterval;
 
         /// <summary>公式の平均評価と評価数を data.json のエントリへ書く。評価が無い作品は平均を持たない。</summary>
         private static void SetRating(JsonObject entry, ReviewCollection reviews)
