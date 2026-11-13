@@ -321,7 +321,11 @@ namespace dmmCollect
             return null;
         }
 
-        public bool UpdateOrAddEntry(JsonObject newData, bool isBook = false)
+        /// <param name="libraryTitle">
+        /// newData のタイトルが購入済みライブラリ上の表記であることを示す。ライブラリの一覧はこの表記で照合するので、
+        /// cid で照合した項目でもタイトルをこの表記に揃える（揃えないと、次回も購入済みと分からず再ダウンロードされる）。
+        /// </param>
+        public bool UpdateOrAddEntry(JsonObject newData, bool isBook = false, bool libraryTitle = false)
         {
             string keyField = isBook ? "subtitle" : "title";
             string? title = newData[keyField]?.ToString();
@@ -357,7 +361,20 @@ namespace dmmCollect
                     if (System.Text.RegularExpressions.Regex.IsMatch(id, @"\d{3,}") && _idIndex.TryGetValue(id, out int idIndex))
                     {
                         entry = Data[idIndex];
-                        keepTitle = true;
+                        if (libraryTitle)
+                        {
+                            // 古い表記の索引は消す（残すと詳細ページの表記で照合されてタイトルが戻ってしまう）
+                            string oldKey = NormalizeTitle(entry[keyField]?.ToString() ?? "");
+                            if (_titleIndex.TryGetValue(oldKey, out int oldIndex) && oldIndex == idIndex)
+                            {
+                                _titleIndex.Remove(oldKey);
+                            }
+                            _titleIndex[key] = idIndex;
+                        }
+                        else
+                        {
+                            keepTitle = true;
+                        }
                     }
                 }
             }

@@ -679,7 +679,7 @@ namespace dmmCollect.Scrapers
                     ["cid"] = existingCid
                 };
 
-                return dataManager.UpdateOrAddEntry(updateData);
+                return dataManager.UpdateOrAddEntry(updateData, libraryTitle: true);
             }
             catch (Exception ex)
             {
