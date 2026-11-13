@@ -1060,9 +1060,22 @@ namespace dmmCollect.Scrapers
                 : $"{elapsed.TotalSeconds:F1}秒";
         }
 
-        private async Task DownloadImageAsync(string url, string savePath)
+        /// <summary>
+        /// サンプル画像の小さい版の URL から大きい版の URL を作る。
+        ///   通常作品: abc00123-1.jpg → abc00123jp-1.jpg
+        ///   素人作品: smus044js-001.jpg → smus044jp-001.jpg（小さい版の「js」を「jp」に置き換える）
+        /// </summary>
+        public static string LargeSampleUrl(string smallUrl) =>
+            Regex.Replace(smallUrl, @"(?:js)?-(\d+)\.jpg$", "jp-$1.jpg");
+
+        /// <summary>以前の誤り（素人作品の大きい版を ...jsjp-001.jpg にしていた）で保存された URL を持つか。</summary>
+        public static bool HasBrokenSampleUrls(JsonObject item) =>
+            item["sample_images"] is JsonArray urls && urls.Any(u => (u?.ToString() ?? "").Contains("jsjp-", StringComparison.Ordinal));
+
+        /// <summary>画像を保存する。保存できた（既にあった）ら true、失敗したら警告を出して false。</summary>
+        private async Task<bool> DownloadImageAsync(string url, string savePath)
         {
-            if (File.Exists(savePath)) return;
+            if (File.Exists(savePath)) return true;
 
             try
             {
@@ -1072,10 +1085,12 @@ namespace dmmCollect.Scrapers
                 {
                     Console.WriteLine($"  [DOWNLOAD] {Path.GetFileName(savePath)}");
                 }
+                return true;
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"\n[WARNING] 画像ダウンロード失敗 ({url}): {ex.Message}");
+                return false;
             }
         }
 
@@ -1363,8 +1378,7 @@ namespace dmmCollect.Scrapers
                             string cleanSrc = src.Split('?')[0];
                             if (!cleanSrc.Contains("jp-"))
                             {
-                                string jpSrc = Regex.Replace(cleanSrc, @"-(\d+)\.jpg$", "jp-$1.jpg");
-                                sampleImagePairs.Add((jpSrc, cleanSrc));
+                                sampleImagePairs.Add((LargeSampleUrl(cleanSrc), cleanSrc));
                             }
                             else
                             {
@@ -1510,7 +1524,8 @@ namespace dmmCollect.Scrapers
                     }
                 }
                 
-                if (missingDetail)
+                // 素人作品のサンプル画像の URL を誤って保存した作品も取り直す（画像も落とし直す）
+                if (missingDetail || HasBrokenSampleUrls(item))
                 {
                     itemsToFetch.Add(item);
                 }
@@ -1591,43 +1606,40 @@ namespace dmmCollect.Scrapers
                                 int downloadCount = 0;
                                 int sampleCount = sampleImages?.Count ?? 0;
 
+                                int failedCount = 0;
                                 for (int idx = 0; idx < sampleCount; idx++)
                                 {
                                     string imgUrl = sampleImages![idx];
-                                    try
+                                    string savePath = Path.Combine(sampleDir, Path.GetFileName(imgUrl));
+                                    if (File.Exists(savePath)) continue;
+                                    if (await DownloadImageAsync(imgUrl, savePath))
                                     {
-                                        string filename = Path.GetFileName(imgUrl);
-                                        string savePath = Path.Combine(sampleDir, filename);
-                                        if (!File.Exists(savePath))
+                                        downloadCount++;
+                                        continue;
+                                    }
+
+                                    // 大きい版が取れなければ小さい版を保存する
+                                    // （以前は失敗が例外にならず、小さい版で代用されないまま成功として数えていた）
+                                    if (sampleImagesMini != null && idx < sampleImagesMini.Count)
+                                    {
+                                        string miniUrl = sampleImagesMini[idx];
+                                        if (await DownloadImageAsync(miniUrl, Path.Combine(sampleDir, Path.GetFileName(miniUrl))))
                                         {
-                                            await DownloadImageAsync(imgUrl, savePath);
                                             downloadCount++;
+                                            Console.WriteLine($"  -> 小さい版で代用しました: {Path.GetFileName(miniUrl)}");
+                                            continue;
                                         }
                                     }
-                                    catch (HttpRequestException)
-                                    {
-                                        if (sampleImagesMini != null && idx < sampleImagesMini.Count)
-                                        {
-                                            string miniUrl = sampleImagesMini[idx];
-                                            try
-                                            {
-                                                string miniFilename = Path.GetFileName(miniUrl);
-                                                string miniSavePath = Path.Combine(sampleDir, miniFilename);
-                                                if (!File.Exists(miniSavePath))
-                                                {
-                                                    await DownloadImageAsync(miniUrl, miniSavePath);
-                                                    downloadCount++;
-                                                }
-                                            }
-                                            catch { }
-                                        }
-                                    }
-                                    catch { }
+                                    failedCount++;
                                 }
 
                                 if (downloadCount > 0)
                                 {
                                     Console.WriteLine($"  -> サンプル画像: {downloadCount}枚ダウンロード");
+                                }
+                                if (failedCount > 0)
+                                {
+                                    Console.WriteLine($"  -> サンプル画像: {failedCount}枚は取得できませんでした");
                                 }
                             }
                             catch (Exception ex)
