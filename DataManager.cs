@@ -330,6 +330,7 @@ namespace dmmCollect
             JsonObject? entry;
             Dictionary<string, int> indexMap;
             string key;
+            bool keepTitle = false;
 
             if (isBook)
             {
@@ -345,6 +346,20 @@ namespace dmmCollect
                 key = NormalizeTitle(title);
                 entry = FindEntry(key);
                 indexMap = _titleIndex;
+
+                // タイトルで見つからなければ cid で照合する。サイト側でタイトルが変わった作品（【期間限定】が外れた等）や、
+                // 詳細ページのタイトルがライブラリの表記と違う作品（素人作品は「ハルナ SMUS-044」のように品番が付く）で、
+                // 同じ作品の項目が二重にできるのを防ぐ。
+                if (entry == null)
+                {
+                    string id = ItemIdentity.Of(newData);
+                    // URL から誤って取り出した cid（"d" や "fig"。別々の作品が同じ値を持つ）では照合しない
+                    if (System.Text.RegularExpressions.Regex.IsMatch(id, @"\d{3,}") && _idIndex.TryGetValue(id, out int idIndex))
+                    {
+                        entry = Data[idIndex];
+                        keepTitle = true;
+                    }
+                }
             }
 
             bool updated = false;
@@ -353,6 +368,8 @@ namespace dmmCollect
                 foreach (var pair in newData)
                 {
                     if (pair.Value == null) continue;
+                    // cid で照合した項目は、タイトル（照合の鍵）を既存の表記のまま残す
+                    if (keepTitle && pair.Key == keyField) continue;
                     
                     if (!entry.ContainsKey(pair.Key) || entry[pair.Key]?.ToJsonString() != pair.Value.ToJsonString())
                     {
