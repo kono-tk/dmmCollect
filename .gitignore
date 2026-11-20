@@ -20,3 +20,6 @@ sync_debug_log.txt
 # OS metadata
 .DS_Store
 Thumbs.db
+
+# Popup HTML dump written on each run
+debug_popup.html
